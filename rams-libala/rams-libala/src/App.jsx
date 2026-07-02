@@ -1,0 +1,1427 @@
+import React, { useState, useEffect, useMemo } from "react";
+import { Heart, Lock, User, Users, Sparkles, Check, X, MapPin, Calendar, Briefcase, ChevronRight, Eye, EyeOff, Plus, ArrowLeft } from "lucide-react";
+
+// ---------- Design tokens ----------
+// Palette: deep bordeaux + warm cream + soft gold, evokes a discreet, trusted personal service
+// Display face: Playfair Display (serif, elegant) / Body: Inter / Data: ui-monospace
+
+const COLORS = {
+  bordeaux: "#5C1A2B",
+  bordeauxDark: "#3D0F1C",
+  cream: "#FAF6F0",
+  creamDark: "#F0E9DD",
+  gold: "#C9A86A",
+  goldLight: "#E8D5A8",
+  ink: "#2A2422",
+  inkSoft: "#6B5F58",
+};
+
+const INTERESTS = [
+  "Voyage", "Lecture", "Cuisine", "Sport", "Musique", "Art", "Nature",
+  "Cinéma", "Danse", "Spiritualité", "Famille", "Entrepreneuriat", "Mode", "Bénévolat"
+];
+
+const RELIGIONS = ["Christianisme", "Islam", "Judaïsme", "Hindouisme", "Bouddhisme", "Autre", "Sans religion", "Peu importe"];
+
+const SITUATIONS = ["Célibataire", "Divorcé(e)", "Veuf/Veuve"];
+
+const ZONES = ["France", "Europe", "Afrique", "Amérique", "Peu importe"];
+
+const AGENCY_NAME = "RAM'S Libala";
+
+// Codes promo donnant un accès gratuit (modifiable ici)
+const FREE_ACCESS_CODES = ["RAMSLIBALA-OFFERT", "BIENVENUE2026"];
+
+// Modifiable ici : durée en mois -> prix en euros, profils garantis, et type de formule
+const SUBSCRIPTION_PLANS = [
+  { id: "standard-3", months: 3, price: 60, profiles: "3 à 4 profils proposés", stripeLink: "https://buy.stripe.com/aFacN794cb2idTI34w1ZS02" },
+  { id: "standard-6", months: 6, price: 99, profiles: "5 à 6 profils proposés", stripeLink: "https://buy.stripe.com/fZu4gBgwEeeu6rg20s1ZS03" },
+  { id: "standard-9", months: 9, price: 135, profiles: "7 à 8 profils proposés", stripeLink: "https://buy.stripe.com/00w7sN5S02vMaHwawY1ZS04" },
+  { id: "standard-12", months: 12, price: 160, profiles: "9 à 11 profils proposés", stripeLink: "https://buy.stripe.com/7sY6oJ3JSc6m4j8dJa1ZS05" },
+  {
+    id: "vip-3", months: 3, price: 250, vip: true,
+    profiles: "2 à 4 mises en relation",
+    stripeLink: "https://buy.stripe.com/9B67sNfsA9Ye16W6gI1ZS06",
+    description: "Entretien personnalisé en présentiel avec l'agence (France uniquement) + organisation logistique des 2 premiers rendez-vous de mise en relation (l'agence choisit le lieu et l'horaire ; les deux personnes se rencontrent seules)",
+  },
+];
+
+function addMonths(date, months) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d.getTime();
+}
+
+function isSubscriptionActive(profile) {
+  if (!profile.subscriptionExpiresAt) return false;
+  return Date.now() <= profile.subscriptionExpiresAt;
+}
+
+function daysRemaining(profile) {
+  if (!profile.subscriptionExpiresAt) return 0;
+  return Math.max(0, Math.ceil((profile.subscriptionExpiresAt - Date.now()) / (1000 * 60 * 60 * 24)));
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+// ---------- Matching engine ----------
+function computeScore(a, b) {
+  if (a.id === b.id) return 0;
+  if (!isSubscriptionActive(a) || !isSubscriptionActive(b)) return 0;
+  if (a.lookingForGender && b.gender && a.lookingForGender !== "Peu importe" && a.lookingForGender !== b.gender) return 0;
+  if (b.lookingForGender && a.gender && b.lookingForGender !== "Peu importe" && b.lookingForGender !== a.gender) return 0;
+
+  let score = 0;
+  let max = 0;
+
+  // Age range fit (weight 18)
+  max += 18;
+  const aAge = Number(a.age), bAge = Number(b.age);
+  const aWantsMin = Number(a.ageMin) || 0, aWantsMax = Number(a.ageMax) || 200;
+  const bWantsMin = Number(b.ageMin) || 0, bWantsMax = Number(b.ageMax) || 200;
+  const aFits = bAge >= aWantsMin && bAge <= aWantsMax;
+  const bFits = aAge >= bWantsMin && aAge <= bWantsMax;
+  if (aFits && bFits) score += 18;
+  else if (aFits || bFits) score += 7;
+
+  // Location (weight 10)
+  max += 10;
+  if (a.city && b.city && a.city.trim().toLowerCase() === b.city.trim().toLowerCase()) score += 10;
+
+  // Wants children alignment (weight 17)
+  max += 17;
+  if (a.wantsChildren && b.wantsChildren) {
+    if (a.wantsChildren === b.wantsChildren) score += 17;
+    else if (a.wantsChildren === "Peu importe" || b.wantsChildren === "Peu importe") score += 10;
+  }
+
+  // Religion (weight 13)
+  max += 13;
+  if (a.religion && b.religion) {
+    if (a.religion === b.religion) score += 13;
+    else if (a.religion === "Peu importe" || b.religion === "Peu importe") score += 7;
+  }
+
+  // Height preference fit (weight 12)
+  max += 12;
+  const bHeight = Number(b.height), aHeight = Number(a.height);
+  const aHMin = Number(a.lookingForHeightMin) || 0, aHMax = Number(a.lookingForHeightMax) || 999;
+  const bHMin = Number(b.lookingForHeightMin) || 0, bHMax = Number(b.lookingForHeightMax) || 999;
+  const aHeightFits = !bHeight || (bHeight >= aHMin && bHeight <= aHMax);
+  const bHeightFits = !aHeight || (aHeight >= bHMin && aHeight <= bHMax);
+  if (aHeightFits && bHeightFits) score += 12;
+  else if (aHeightFits || bHeightFits) score += 5;
+
+  // Accepted geographic zone overlap (weight 10)
+  max += 10;
+  const aZones = new Set(a.acceptedZones || []);
+  const bZones = new Set(b.acceptedZones || []);
+  const zonesOverlap = aZones.size === 0 || bZones.size === 0
+    || aZones.has("Peu importe") || bZones.has("Peu importe")
+    || [...aZones].some(z => bZones.has(z));
+  if (zonesOverlap) score += 10;
+
+  // Shared interests (weight 20)
+  max += 20;
+  const aInt = new Set(a.interests || []);
+  const bInt = new Set(b.interests || []);
+  const shared = [...aInt].filter(x => bInt.has(x)).length;
+  const denom = Math.max(aInt.size, bInt.size, 1);
+  score += Math.round((shared / denom) * 20);
+
+  return Math.round((score / max) * 100);
+}
+
+// ---------- Storage helpers ----------
+async function loadProfiles() {
+  try {
+    const res = await window.storage.get("profiles", true);
+    return res ? JSON.parse(res.value) : [];
+  } catch {
+    return [];
+  }
+}
+async function saveProfiles(profiles) {
+  try {
+    await window.storage.set("profiles", JSON.stringify(profiles), true);
+  } catch (e) {
+    console.error("save profiles failed", e);
+  }
+}
+async function loadMatches() {
+  try {
+    const res = await window.storage.get("matches", true);
+    return res ? JSON.parse(res.value) : [];
+  } catch {
+    return [];
+  }
+}
+async function saveMatches(matches) {
+  try {
+    await window.storage.set("matches", JSON.stringify(matches), true);
+  } catch (e) {
+    console.error("save matches failed", e);
+  }
+}
+
+// ---------- UI Primitives ----------
+function Field({ label, children, hint }) {
+  return (
+    <label style={{ display: "block", marginBottom: 20 }}>
+      <span style={{
+        display: "block", fontSize: 13, letterSpacing: "0.04em", textTransform: "uppercase",
+        color: COLORS.inkSoft, marginBottom: 8, fontWeight: 600
+      }}>{label}</span>
+      {children}
+      {hint && <span style={{ display: "block", fontSize: 12, color: COLORS.inkSoft, marginTop: 6 }}>{hint}</span>}
+    </label>
+  );
+}
+
+const inputStyle = {
+  width: "100%", padding: "12px 14px", fontSize: 15, borderRadius: 8,
+  border: `1px solid ${COLORS.creamDark}`, background: "#fff", color: COLORS.ink,
+  outline: "none", fontFamily: "Inter, sans-serif", boxSizing: "border-box",
+};
+
+function TextInput(props) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <input
+      {...props}
+      onFocus={(e) => { setFocus(true); props.onFocus?.(e); }}
+      onBlur={(e) => { setFocus(false); props.onBlur?.(e); }}
+      style={{ ...inputStyle, ...(focus ? { borderColor: COLORS.gold, boxShadow: `0 0 0 3px ${COLORS.goldLight}55` } : {}), ...(props.style || {}) }}
+    />
+  );
+}
+
+function Select({ value, onChange, options, placeholder }) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <select
+      value={value || ""}
+      onChange={onChange}
+      onFocus={() => setFocus(true)}
+      onBlur={() => setFocus(false)}
+      style={{ ...inputStyle, ...(focus ? { borderColor: COLORS.gold, boxShadow: `0 0 0 3px ${COLORS.goldLight}55` } : {}), cursor: "pointer" }}
+    >
+      <option value="" disabled>{placeholder}</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
+function Pill({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: "8px 16px", borderRadius: 20, fontSize: 13.5, fontWeight: 500,
+        border: `1.5px solid ${active ? COLORS.bordeaux : COLORS.creamDark}`,
+        background: active ? COLORS.bordeaux : "#fff",
+        color: active ? "#fff" : COLORS.inkSoft,
+        cursor: "pointer", transition: "all 0.15s ease", margin: "0 6px 8px 0",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Button({ children, onClick, variant = "primary", style, type = "button", disabled }) {
+  const base = {
+    padding: "13px 28px", borderRadius: 8, fontSize: 14.5, fontWeight: 600,
+    cursor: disabled ? "not-allowed" : "pointer", border: "none",
+    display: "inline-flex", alignItems: "center", gap: 8,
+    transition: "transform 0.1s ease, opacity 0.15s ease", opacity: disabled ? 0.5 : 1,
+    fontFamily: "Inter, sans-serif",
+  };
+  const variants = {
+    primary: { background: COLORS.bordeaux, color: "#fff" },
+    secondary: { background: "transparent", color: COLORS.bordeaux, border: `1.5px solid ${COLORS.bordeaux}` },
+    ghost: { background: "transparent", color: COLORS.inkSoft },
+    gold: { background: COLORS.gold, color: COLORS.bordeauxDark },
+  };
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={onClick}
+      onMouseDown={(e) => !disabled && (e.currentTarget.style.transform = "scale(0.97)")}
+      onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
+      style={{ ...base, ...variants[variant], ...style }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ScoreRing({ score }) {
+  const color = score >= 70 ? "#3D7A5C" : score >= 40 ? COLORS.gold : COLORS.inkSoft;
+  return (
+    <div style={{ position: "relative", width: 56, height: 56, flexShrink: 0 }}>
+      <svg width="56" height="56" viewBox="0 0 56 56">
+        <circle cx="28" cy="28" r="24" fill="none" stroke={COLORS.creamDark} strokeWidth="5" />
+        <circle
+          cx="28" cy="28" r="24" fill="none" stroke={color} strokeWidth="5"
+          strokeDasharray={`${(score / 100) * 150.8} 150.8`}
+          strokeLinecap="round" transform="rotate(-90 28 28)"
+        />
+      </svg>
+      <div style={{
+        position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 13, fontWeight: 700, color: COLORS.ink, fontFamily: "ui-monospace, monospace"
+      }}>{score}</div>
+    </div>
+  );
+}
+
+function Avatar({ photo, name, size = 48 }) {
+  if (photo) {
+    return <img src={photo} alt={name} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", border: `2px solid ${COLORS.goldLight}` }} />;
+  }
+  const initial = (name || "?").trim()[0]?.toUpperCase() || "?";
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", background: COLORS.bordeaux, color: "#fff",
+      display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.4, fontWeight: 700,
+      fontFamily: "Playfair Display, serif", flexShrink: 0
+    }}>{initial}</div>
+  );
+}
+
+// ---------- Registration Form ----------
+function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
+  const [form, setForm] = useState({
+    firstName: "", age: "", gender: "", city: "", situation: "", hasChildren: "", numberOfChildren: "", childrenAges: "", wantsChildren: "",
+    religion: "", profession: "", interests: [], lookingForGender: "", ageMin: "", ageMax: "",
+    height: "", lookingForHeightMin: "", lookingForHeightMax: "", acceptedZones: [],
+    about: "", photo: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "",
+  });
+  const [step, setStep] = useState(0);
+  const [photoPreview, setPhotoPreview] = useState(null);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const toggleInterest = (i) => setForm(f => ({
+    ...f, interests: f.interests.includes(i) ? f.interests.filter(x => x !== i) : [...f.interests, i]
+  }));
+  const toggleZone = (z) => setForm(f => ({
+    ...f, acceptedZones: f.acceptedZones.includes(z) ? f.acceptedZones.filter(x => x !== z) : [...f.acceptedZones, z]
+  }));
+
+  const handlePhoto = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { setPhotoPreview(reader.result); set("photo", reader.result); };
+    reader.readAsDataURL(file);
+  };
+
+  const selectedPlan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
+  const isFreeCode = !!(form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim()));
+  const chosenPaymentLink = form.paymentProvider === "stripe" ? selectedPlan?.stripeLink : form.paymentProvider === "paypal" ? selectedPlan?.paypalLink : null;
+  const needsRealPayment = !adminMode && !isFreeCode && form.paymentMethod === "card" && !!chosenPaymentLink;
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+
+  const steps = adminMode ? [
+    { title: "Vos informations", icon: User },
+    { title: "Vos critères de vie", icon: MapPin },
+    { title: "Vos centres d'intérêt", icon: Sparkles },
+    { title: "Ce que vous recherchez", icon: Heart },
+  ] : [
+    { title: "Vos informations", icon: User },
+    { title: "Vos critères de vie", icon: MapPin },
+    { title: "Vos centres d'intérêt", icon: Sparkles },
+    { title: "Ce que vous recherchez", icon: Heart },
+    { title: "Choisissez votre formule", icon: Lock },
+    { title: "Contrat et paiement", icon: Check },
+  ];
+
+  const canNext = () => {
+    if (step === 0) return form.firstName && form.age && form.gender;
+    if (step === 1) return form.city && form.situation && form.hasChildren && form.wantsChildren;
+    if (step === 2) return form.interests.length > 0;
+    if (step === 3) return form.lookingForGender && form.ageMin && form.ageMax;
+    if (!adminMode && step === 4) return !!form.subscriptionPlanId;
+    if (!adminMode && step === 5) return !!form.contractAccepted;
+    return true;
+  };
+
+  const handleSubmit = () => {
+    const now = Date.now();
+    if (adminMode) {
+      onSubmit({
+        ...form, id: uid(), status: "en_attente", createdAt: now,
+        subscriptionStartedAt: now,
+        subscriptionExpiresAt: addMonths(now, 12), // accès gratuit, validité 12 mois par défaut, ajustable ensuite dans l'admin
+        subscriptionPrice: 0,
+        subscriptionPlanLabel: "Profil ajouté manuellement (gratuit)",
+        isVip: false,
+        addedManually: true,
+        contractAcceptedAt: null,
+      });
+      return;
+    }
+    const plan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
+    const isFreeCode = form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim());
+    onSubmit({
+      ...form, id: uid(), status: "en_attente", createdAt: now,
+      subscriptionStartedAt: now,
+      subscriptionExpiresAt: addMonths(now, plan.months),
+      subscriptionPrice: isFreeCode ? 0 : plan?.price,
+      subscriptionPlanLabel: `${plan?.vip ? "VIP " : ""}${plan.months} mois${isFreeCode ? " (code promo)" : ""}`,
+      isVip: !!plan?.vip,
+      contractAcceptedAt: now,
+      paidViaPromoCode: !!isFreeCode,
+    });
+  };
+
+  return (
+    <div style={{ maxWidth: 560, margin: "0 auto", padding: "0 20px" }}>
+      {/* Progress */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 36 }}>
+        {steps.map((s, i) => (
+          <div key={i} style={{
+            flex: 1, height: 3, borderRadius: 2,
+            background: i <= step ? COLORS.gold : COLORS.creamDark, transition: "background 0.3s"
+          }} />
+        ))}
+      </div>
+
+      <div style={{ marginBottom: 28 }}>
+        <span style={{ fontSize: 13, color: COLORS.gold, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Étape {step + 1} sur {steps.length}
+        </span>
+        <h2 style={{
+          fontFamily: "Playfair Display, serif", fontSize: 28, color: COLORS.bordeauxDark, margin: "6px 0 0"
+        }}>{steps[step].title}</h2>
+      </div>
+
+      {step === 0 && (
+        <>
+          <Field label="Prénom">
+            <TextInput value={form.firstName} onChange={e => set("firstName", e.target.value)} placeholder="Votre prénom" />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Field label="Âge">
+              <TextInput type="number" value={form.age} onChange={e => set("age", e.target.value)} placeholder="35" />
+            </Field>
+            <Field label="Genre">
+              <Select value={form.gender} onChange={e => set("gender", e.target.value)} placeholder="Choisir" options={["Femme", "Homme"]} />
+            </Field>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Field label="Taille (en cm)" hint="Facultatif">
+              <TextInput type="number" value={form.height} onChange={e => set("height", e.target.value)} placeholder="170" />
+            </Field>
+            <Field label="Profession" hint="Facultatif">
+              <TextInput value={form.profession} onChange={e => set("profession", e.target.value)} placeholder="Votre métier" />
+            </Field>
+          </div>
+          <Field label="Votre photo" hint="Visible uniquement par l'agence, puis par votre futur match validé">
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <Avatar photo={photoPreview} name={form.firstName} size={64} />
+              <label style={{
+                padding: "10px 18px", borderRadius: 8,
+                border: `1.5px dashed ${COLORS.gold}`,
+                color: COLORS.bordeaux, fontSize: 14, fontWeight: 600, cursor: "pointer"
+              }}>
+                Choisir une photo
+                <input type="file" accept="image/*" onChange={handlePhoto} style={{ display: "none" }} />
+              </label>
+            </div>
+          </Field>
+        </>
+      )}
+
+      {step === 1 && (
+        <>
+          <Field label="Ville">
+            <TextInput value={form.city} onChange={e => set("city", e.target.value)} placeholder="Votre ville" />
+          </Field>
+          <Field label="Situation familiale">
+            <Select value={form.situation} onChange={e => set("situation", e.target.value)} placeholder="Choisir" options={SITUATIONS} />
+          </Field>
+          <Field label="Avez-vous des enfants ?">
+            <Select value={form.hasChildren} onChange={e => set("hasChildren", e.target.value)} placeholder="Choisir" options={["Oui", "Non"]} />
+          </Field>
+          {form.hasChildren === "Oui" && (
+            <>
+              <Field label="Combien d'enfants ?">
+                <TextInput type="number" value={form.numberOfChildren} onChange={e => set("numberOfChildren", e.target.value)} placeholder="2" />
+              </Field>
+              <Field label="Âge(s) des enfants" hint="Ex : 4 et 9 ans">
+                <TextInput value={form.childrenAges} onChange={e => set("childrenAges", e.target.value)} placeholder="4 et 9 ans" />
+              </Field>
+            </>
+          )}
+          <Field label="Désirez-vous encore des enfants ?">
+            <Select value={form.wantsChildren} onChange={e => set("wantsChildren", e.target.value)} placeholder="Choisir" options={["Oui", "Non", "Peu importe"]} />
+          </Field>
+          <Field label="Religion" hint="Facultatif, utilisé seulement si c'est important pour vous">
+            <Select value={form.religion} onChange={e => set("religion", e.target.value)} placeholder="Choisir" options={RELIGIONS} />
+          </Field>
+        </>
+      )}
+
+      {step === 2 && (
+        <Field label="Sélectionnez ce qui vous correspond" hint="Choisissez-en plusieurs">
+          <div style={{ marginTop: 4 }}>
+            {INTERESTS.map(i => (
+              <Pill key={i} active={form.interests.includes(i)} onClick={() => toggleInterest(i)}>{i}</Pill>
+            ))}
+          </div>
+        </Field>
+      )}
+
+      {step === 3 && (
+        <>
+          <Field label="Vous recherchez">
+            <Select value={form.lookingForGender} onChange={e => set("lookingForGender", e.target.value)} placeholder="Choisir" options={["Femme", "Homme", "Peu importe"]} />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Field label="Âge minimum">
+              <TextInput type="number" value={form.ageMin} onChange={e => set("ageMin", e.target.value)} placeholder="28" />
+            </Field>
+            <Field label="Âge maximum">
+              <TextInput type="number" value={form.ageMax} onChange={e => set("ageMax", e.target.value)} placeholder="45" />
+            </Field>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Field label="Taille minimum (cm)" hint="Facultatif">
+              <TextInput type="number" value={form.lookingForHeightMin} onChange={e => set("lookingForHeightMin", e.target.value)} placeholder="165" />
+            </Field>
+            <Field label="Taille maximum (cm)" hint="Facultatif">
+              <TextInput type="number" value={form.lookingForHeightMax} onChange={e => set("lookingForHeightMax", e.target.value)} placeholder="195" />
+            </Field>
+          </div>
+          <Field label="Zones géographiques acceptées" hint="Acceptez-vous une relation à distance avec une personne basée ailleurs ?">
+            <div style={{ marginTop: 4 }}>
+              {ZONES.map(z => (
+                <Pill key={z} active={form.acceptedZones.includes(z)} onClick={() => toggleZone(z)}>{z}</Pill>
+              ))}
+            </div>
+          </Field>
+          <Field label="Quelques mots sur vous ou ce que vous recherchez" hint="Facultatif">
+            <textarea
+              value={form.about} onChange={e => set("about", e.target.value)}
+              placeholder="Ce qui compte pour vous chez l'autre..."
+              style={{ ...inputStyle, minHeight: 90, resize: "vertical", fontFamily: "Inter, sans-serif" }}
+            />
+          </Field>
+        </>
+      )}
+
+      {step === 4 && (
+        <Field label="Sélectionnez votre formule" hint="Votre profil sera actif pendant toute la durée choisie">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
+            {SUBSCRIPTION_PLANS.filter(p => !p.vip).map(plan => {
+              const active = form.subscriptionPlanId === plan.id;
+              return (
+                <button
+                  key={plan.id}
+                  type="button"
+                  onClick={() => set("subscriptionPlanId", plan.id)}
+                  style={{
+                    padding: "18px 16px", borderRadius: 12, textAlign: "left", cursor: "pointer",
+                    border: `2px solid ${active ? COLORS.bordeaux : COLORS.creamDark}`,
+                    background: active ? COLORS.cream : "#fff",
+                  }}
+                >
+                  <div style={{ fontSize: 13, color: COLORS.inkSoft, fontWeight: 600, textTransform: "uppercase" }}>
+                    {plan.months} mois
+                  </div>
+                  <div style={{ fontFamily: "Playfair Display, serif", fontSize: 24, color: COLORS.bordeauxDark, marginTop: 4 }}>
+                    {plan.price} €
+                  </div>
+                  <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 6 }}>{plan.profiles}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop: 22, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: COLORS.gold, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Formule accompagnement personnalisé
+            </span>
+          </div>
+          {SUBSCRIPTION_PLANS.filter(p => p.vip).map(plan => {
+            const active = form.subscriptionPlanId === plan.id;
+            return (
+              <button
+                key={plan.id}
+                type="button"
+                onClick={() => set("subscriptionPlanId", plan.id)}
+                style={{
+                  width: "100%", padding: "20px", borderRadius: 12, textAlign: "left", cursor: "pointer",
+                  border: `2px solid ${active ? COLORS.gold : COLORS.creamDark}`,
+                  background: active ? COLORS.goldLight + "33" : "#fff",
+                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 13, color: COLORS.bordeaux, fontWeight: 700, textTransform: "uppercase" }}>
+                    VIP · {plan.months} mois
+                  </div>
+                  <div style={{ fontSize: 13, color: COLORS.inkSoft, marginTop: 4 }}>{plan.profiles}</div>
+                  <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 4, maxWidth: 320 }}>{plan.description}</div>
+                </div>
+                <div style={{ fontFamily: "Playfair Display, serif", fontSize: 26, color: COLORS.bordeauxDark, whiteSpace: "nowrap" }}>
+                  {plan.price} €
+                </div>
+              </button>
+            );
+          })}
+        </Field>
+      )}
+
+      {step === 5 && (() => {
+        const plan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
+        return (
+          <>
+            <div style={{
+              background: "#fff", border: `1px solid ${COLORS.creamDark}`, borderRadius: 12,
+              padding: 22, maxHeight: 320, overflowY: "auto", fontSize: 13.5, color: COLORS.ink, lineHeight: 1.7
+            }}>
+              <h4 style={{ fontFamily: "Playfair Display, serif", fontSize: 17, color: COLORS.bordeauxDark, marginTop: 0 }}>
+                Contrat de mise en relation — {AGENCY_NAME}
+              </h4>
+              <p><strong>1. Objet.</strong> {AGENCY_NAME} propose un service de mise en relation entre personnes célibataires, sur la base des critères déclarés par le client lors de son inscription.</p>
+              <p><strong>2. Formule souscrite.</strong> {plan ? `${plan.vip ? "VIP " : ""}${plan.months} mois — ${plan.profiles} — ${plan.price} €` : "—"}.{plan?.vip && " La formule VIP comprend : (a) un entretien personnalisé en présentiel entre le client et l'agence, proposé uniquement aux clients résidant en France métropolitaine ; cette prestation pourra être étendue à l'international ultérieurement ; (b) l'organisation logistique des deux premiers rendez-vous de mise en relation (choix du lieu et de l'horaire par l'agence). Lors de ces rendez-vous de mise en relation, l'agence n'est pas présente : seules les deux personnes mises en relation s'y rencontrent."}</p>
+              <p><strong>3. Obligation de moyens.</strong> {AGENCY_NAME} s'engage à mettre en œuvre les moyens nécessaires à la recherche de profils compatibles (sélection, vérification déclarative, mise en relation). {AGENCY_NAME} n'a pas d'obligation de résultat et ne garantit pas la conclusion d'une relation durable.</p>
+              <p><strong>4. Confidentialité.</strong> Les informations et la photo transmises restent strictement confidentielles et ne sont communiquées à un autre client qu'après validation d'une mise en relation par {AGENCY_NAME}.</p>
+              <p><strong>5. Durée et expiration.</strong> L'abonnement est valable pour la durée choisie à compter de la date de paiement. À l'expiration, le profil n'est plus proposé dans le cadre du matching jusqu'à son renouvellement.</p>
+              <p><strong>6. Droit de rétractation.</strong> Conformément à la réglementation applicable aux contrats de courtage matrimonial, le client dispose d'un délai de rétractation après la signature du présent contrat pour notifier sa décision de ne pas poursuivre, sauf début d'exécution expressément demandé par le client.</p>
+              <p><strong>7. Aucune garantie de résultat.</strong> Le nombre de profils ou de mises en relation indiqué dans la formule constitue un engagement de moyens et non une garantie de relation amoureuse ou de mariage.</p>
+            </div>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 18, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.contractAccepted}
+                onChange={e => set("contractAccepted", e.target.checked)}
+                style={{ marginTop: 3, width: 17, height: 17, cursor: "pointer", accentColor: COLORS.bordeaux }}
+              />
+              <span style={{ fontSize: 14, color: COLORS.ink }}>
+                J'ai lu et j'accepte les termes du contrat ci-dessus. Je comprends que mon paiement valide mon inscription auprès de {AGENCY_NAME}.
+              </span>
+            </label>
+
+            <div style={{ marginTop: 22 }}>
+              <Field label="Moyen de paiement">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => set("paymentMethod", "card")}
+                    style={{
+                      padding: "16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                      border: `2px solid ${form.paymentMethod === "card" ? COLORS.bordeaux : COLORS.creamDark}`,
+                      background: form.paymentMethod === "card" ? COLORS.cream : "#fff",
+                    }}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink }}>Carte bancaire / PayPal</div>
+                    <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 3 }}>France, Europe, international</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => set("paymentMethod", "mobile_money")}
+                    style={{
+                      padding: "16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                      border: `2px solid ${form.paymentMethod === "mobile_money" ? COLORS.bordeaux : COLORS.creamDark}`,
+                      background: form.paymentMethod === "mobile_money" ? COLORS.cream : "#fff",
+                    }}
+                  >
+                    <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink }}>Mobile Money</div>
+                    <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 3 }}>Orange Money, MTN, Wave, Moov...</div>
+                  </button>
+                </div>
+              </Field>
+
+              {form.paymentMethod === "card" && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => set("paymentProvider", "stripe")}
+                      disabled={!plan?.stripeLink}
+                      style={{
+                        padding: "12px", borderRadius: 8, textAlign: "center", cursor: plan?.stripeLink ? "pointer" : "not-allowed",
+                        border: `2px solid ${form.paymentProvider === "stripe" ? COLORS.bordeaux : COLORS.creamDark}`,
+                        background: form.paymentProvider === "stripe" ? COLORS.cream : "#fff",
+                        opacity: plan?.stripeLink ? 1 : 0.45, fontSize: 14, fontWeight: 600, color: COLORS.ink,
+                      }}
+                    >
+                      Payer par Stripe
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => set("paymentProvider", "paypal")}
+                      disabled={!plan?.paypalLink}
+                      style={{
+                        padding: "12px", borderRadius: 8, textAlign: "center", cursor: plan?.paypalLink ? "pointer" : "not-allowed",
+                        border: `2px solid ${form.paymentProvider === "paypal" ? COLORS.bordeaux : COLORS.creamDark}`,
+                        background: form.paymentProvider === "paypal" ? COLORS.cream : "#fff",
+                        opacity: plan?.paypalLink ? 1 : 0.45, fontSize: 14, fontWeight: 600, color: COLORS.ink,
+                      }}
+                    >
+                      Payer par PayPal
+                    </button>
+                  </div>
+                  {form.paymentProvider && (plan?.stripeLink || plan?.paypalLink) ? (
+                    (form.paymentProvider === "stripe" ? plan?.stripeLink : plan?.paypalLink) ? (
+                      <div style={{
+                        background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 8,
+                        padding: "12px 14px", fontSize: 13, color: "#2D5C3F"
+                      }}>
+                        Paiement sécurisé disponible. Cliquez sur "Procéder au paiement" ci-dessous : vous serez redirigé(e) vers la page {form.paymentProvider === "stripe" ? "Stripe" : "PayPal"} sécurisée, puis votre inscription sera validée.
+                      </div>
+                    ) : (
+                      <div style={{
+                        background: "#FBF6EA", border: `1px solid ${COLORS.goldLight}`, borderRadius: 8,
+                        padding: "12px 14px", fontSize: 13, color: COLORS.bordeauxDark
+                      }}>
+                        Ce moyen de paiement n'est pas encore activé pour cette formule. En attendant, l'agence vous recontactera pour finaliser le règlement.
+                      </div>
+                    )
+                  ) : !form.paymentProvider && (
+                    <p style={{ fontSize: 13, color: COLORS.inkSoft }}>Choisissez Stripe ou PayPal pour continuer.</p>
+                  )}
+                </div>
+              )}
+              {form.paymentMethod === "mobile_money" && (
+                <div style={{
+                  background: "#FBF6EA", border: `1px solid ${COLORS.goldLight}`, borderRadius: 8,
+                  padding: "12px 14px", fontSize: 13, color: COLORS.bordeauxDark, marginBottom: 16
+                }}>
+                  Le paiement Mobile Money sera bientôt activé. En attendant, l'agence vous recontactera pour finaliser le règlement.
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <Field label="Code promo" hint="Facultatif — si l'agence vous en a fourni un">
+                <TextInput
+                  value={form.promoCode}
+                  onChange={e => set("promoCode", e.target.value.toUpperCase())}
+                  placeholder="Ex : BIENVENUE2026"
+                />
+              </Field>
+              {form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim()) && (
+                <div style={{
+                  background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 8,
+                  padding: "10px 14px", fontSize: 13.5, color: "#2D5C3F"
+                }}>
+                  Code valide — votre inscription sera gratuite, sans paiement à effectuer.
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 36 }}>
+        <Button variant="ghost" onClick={step === 0 ? onCancel : () => setStep(s => s - 1)}>
+          <ArrowLeft size={16} /> {step === 0 ? "Annuler" : "Précédent"}
+        </Button>
+        {step < steps.length - 1 ? (
+          <Button onClick={() => canNext() && setStep(s => s + 1)} disabled={!canNext()}>
+            Continuer <ChevronRight size={16} />
+          </Button>
+        ) : needsRealPayment && !paymentConfirmed ? (
+          <Button
+            onClick={() => { window.open(chosenPaymentLink, "_blank"); setPaymentConfirmed(true); }}
+            disabled={!canNext()}
+            variant="gold"
+          >
+            Procéder au paiement ({selectedPlan.price} €)
+          </Button>
+        ) : (
+          <Button onClick={handleSubmit} disabled={!canNext()} variant="gold">
+            <Check size={16} /> {adminMode ? "Ajouter ce profil" : needsRealPayment ? "J'ai terminé mon paiement" : "Envoyer mon profil"}
+          </Button>
+        )}
+      </div>
+      {needsRealPayment && paymentConfirmed && (
+        <p style={{ fontSize: 12.5, color: COLORS.inkSoft, textAlign: "center", marginTop: 12 }}>
+          Une fois votre paiement confirmé sur la page Stripe, cliquez ci-dessus pour finaliser votre inscription.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------- Admin Login ----------
+function AdminLogin({ onLogin }) {
+  const [pwd, setPwd] = useState("");
+  const [show, setShow] = useState(false);
+  const [error, setError] = useState(false);
+
+  const handle = () => {
+    if (pwd.length > 0) { onLogin(pwd); }
+  };
+
+  return (
+    <div style={{ maxWidth: 380, margin: "80px auto", textAlign: "center", padding: "0 20px" }}>
+      <div style={{
+        width: 56, height: 56, borderRadius: "50%", background: COLORS.bordeaux, margin: "0 auto 20px",
+        display: "flex", alignItems: "center", justifyContent: "center"
+      }}>
+        <Lock size={24} color="#fff" />
+      </div>
+      <h2 style={{ fontFamily: "Playfair Display, serif", fontSize: 26, color: COLORS.bordeauxDark, marginBottom: 6 }}>
+        Espace agence
+      </h2>
+      <p style={{ color: COLORS.inkSoft, fontSize: 14, marginBottom: 28 }}>Accès réservé. Entrez votre mot de passe.</p>
+      <div style={{ position: "relative", marginBottom: 16 }}>
+        <TextInput
+          type={show ? "text" : "password"}
+          value={pwd}
+          onChange={e => { setPwd(e.target.value); setError(false); }}
+          onKeyDown={e => e.key === "Enter" && handle()}
+          placeholder="Mot de passe"
+          style={{ paddingRight: 44 }}
+        />
+        <button onClick={() => setShow(s => !s)} style={{
+          position: "absolute", right: 12, top: 12, background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft
+        }}>
+          {show ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+      {error && <p style={{ color: "#A33", fontSize: 13, marginBottom: 12 }}>Mot de passe incorrect.</p>}
+      <Button onClick={handle} style={{ width: "100%", justifyContent: "center" }}>Se connecter</Button>
+      <p style={{ fontSize: 12, color: COLORS.inkSoft, marginTop: 24 }}>
+        Mot de passe par défaut : <span style={{ fontFamily: "ui-monospace, monospace" }}>agence2026</span> — modifiable dans le code.
+      </p>
+    </div>
+  );
+}
+
+// ---------- Profile detail modal ----------
+function downloadProfileAsPdf(profile) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const interestsHtml = (profile.interests || []).map(i => `<span style="display:inline-block;border:1px solid #C9A86A;border-radius:14px;padding:4px 12px;margin:0 6px 6px 0;font-size:12.5px;color:#5C1A2B;">${i}</span>`).join("");
+  const row = (label, value) => value ? `<tr><td style="padding:8px 0;color:#6B5F58;font-size:13px;width:170px;border-bottom:1px solid #F0E9DD;">${label}</td><td style="padding:8px 0;color:#2A2422;font-size:14px;font-weight:500;border-bottom:1px solid #F0E9DD;">${value}</td></tr>` : "";
+  const html = `
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>Fiche ${profile.firstName}</title>
+      <style>
+        body { font-family: -apple-system, Arial, sans-serif; padding: 40px; color: #2A2422; }
+        h1 { font-size: 22px; color: #3D0F1C; margin-bottom: 2px; }
+        .sub { color: #6B5F58; font-size: 14px; margin-bottom: 24px; }
+        table { width: 100%; border-collapse: collapse; }
+        .badge-vip { background: #E8D5A8; color: #3D0F1C; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 14px; margin-left: 8px; }
+        .about { margin-top: 18px; padding: 14px; background: #FAF6F0; border-radius: 8px; font-style: italic; font-size: 13.5px; }
+        .agency { color: #C9A86A; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; margin-bottom: 18px; }
+      </style>
+    </head>
+    <body>
+      <div class="agency">${AGENCY_NAME}</div>
+      <h1>${profile.firstName}, ${profile.age} ans ${profile.isVip ? '<span class="badge-vip">VIP</span>' : ""}</h1>
+      <div class="sub">${profile.city || ""} ${profile.profession ? "· " + profile.profession : ""}</div>
+      <table>
+        ${row("Genre", profile.gender)}
+        ${row("Situation", profile.situation)}
+        ${row("A des enfants", profile.hasChildren === "Oui" ? `Oui (${profile.numberOfChildren || "?"}, âge${(profile.numberOfChildren || 0) > 1 ? "s" : ""} : ${profile.childrenAges || "non précisé"})` : profile.hasChildren)}
+        ${row("Désire encore des enfants", profile.wantsChildren)}
+        ${row("Religion", profile.religion)}
+        ${row("Taille", profile.height ? profile.height + " cm" : "")}
+        ${row("Recherche", `${profile.lookingForGender || ""}, ${profile.ageMin || "?"}-${profile.ageMax || "?"} ans`)}
+        ${row("Taille recherchée", (profile.lookingForHeightMin || profile.lookingForHeightMax) ? `${profile.lookingForHeightMin || "—"} à ${profile.lookingForHeightMax || "—"} cm` : "")}
+        ${row("Zones acceptées", (profile.acceptedZones || []).join(", "))}
+        ${row("Formule", profile.subscriptionPlanLabel)}
+        ${row("Statut abonnement", isSubscriptionActive(profile) ? `Actif (${daysRemaining(profile)} j restants)` : "Expiré")}
+      </table>
+      <div style="margin-top:18px;">${interestsHtml}</div>
+      ${profile.about ? `<div class="about">"${profile.about}"</div>` : ""}
+    </body>
+    </html>
+  `;
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => win.print();
+}
+
+function ProfileCard({ profile, onClose }) {
+  if (!profile) return null;
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(42,36,34,0.55)", display: "flex",
+      alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20
+    }} onClick={onClose}>
+      <div style={{
+        background: "#fff", borderRadius: 16, maxWidth: 420, width: "100%", padding: 32,
+        maxHeight: "85vh", overflowY: "auto"
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+          <Avatar photo={profile.photo} name={profile.firstName} size={72} />
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h3 style={{ fontFamily: "Playfair Display, serif", fontSize: 22, color: COLORS.bordeauxDark, margin: 0 }}>
+                {profile.firstName}, {profile.age} ans
+              </h3>
+              {profile.isVip && (
+                <span style={{
+                  fontSize: 11, fontWeight: 700, color: COLORS.bordeauxDark, background: COLORS.goldLight,
+                  padding: "3px 9px", borderRadius: 20, letterSpacing: "0.04em"
+                }}>VIP</span>
+              )}
+            </div>
+            <p style={{ color: COLORS.inkSoft, fontSize: 14, margin: "4px 0 0" }}>{profile.city} · {profile.profession || "—"}</p>
+          </div>
+        </div>
+        {profile.isVip && (
+          <div style={{
+            background: COLORS.goldLight + "33", border: `1px solid ${COLORS.goldLight}`, borderRadius: 10,
+            padding: "12px 14px", marginBottom: 16, fontSize: 13.5, color: COLORS.bordeauxDark
+          }}>
+            Formule VIP — pensez à organiser l'entretien personnalisé en présentiel avec ce client, ainsi que la logistique (lieu et horaire) des deux premiers rendez-vous de mise en relation. Vous n'avez pas à être présente à ces deux rendez-vous.
+          </div>
+        )}
+        <DetailRow icon={MapPin} label="Situation" value={profile.situation} />
+        <DetailRow icon={Heart} label="Enfants souhaités" value={profile.wantsChildren} />
+        <DetailRow icon={Briefcase} label="Religion" value={profile.religion || "Non précisé"} />
+        <DetailRow icon={Calendar} label="Recherche" value={`${profile.lookingForGender}, ${profile.ageMin}-${profile.ageMax} ans`} />
+        {profile.height && <DetailRow icon={User} label="Sa taille" value={`${profile.height} cm`} />}
+        {(profile.lookingForHeightMin || profile.lookingForHeightMax) && (
+          <DetailRow icon={User} label="Taille recherchée" value={`${profile.lookingForHeightMin || "—"} à ${profile.lookingForHeightMax || "—"} cm`} />
+        )}
+        {(profile.acceptedZones || []).length > 0 && (
+          <DetailRow icon={MapPin} label="Zones acceptées" value={profile.acceptedZones.join(", ")} />
+        )}
+        {profile.subscriptionExpiresAt && (
+          <DetailRow
+            icon={Lock}
+            label="Abonnement"
+            value={isSubscriptionActive(profile)
+              ? `Actif · ${daysRemaining(profile)} jours restants`
+              : `Expiré le ${new Date(profile.subscriptionExpiresAt).toLocaleDateString("fr-FR")}`}
+          />
+        )}
+        <div style={{ marginTop: 16 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: "0.04em" }}>Centres d'intérêt</span>
+          <div style={{ marginTop: 10 }}>
+            {(profile.interests || []).map(i => <Pill key={i} active onClick={() => {}}>{i}</Pill>)}
+          </div>
+        </div>
+        {profile.about && (
+          <div style={{ marginTop: 16, padding: 14, background: COLORS.cream, borderRadius: 10, fontSize: 14, color: COLORS.ink, fontStyle: "italic" }}>
+            "{profile.about}"
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <Button onClick={() => downloadProfileAsPdf(profile)} variant="gold" style={{ flex: 1, justifyContent: "center" }}>
+            Télécharger en PDF
+          </Button>
+          <Button onClick={onClose} variant="secondary" style={{ flex: 1, justifyContent: "center" }}>Fermer</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ icon: Icon, label, value }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${COLORS.cream}` }}>
+      <Icon size={16} color={COLORS.gold} />
+      <span style={{ fontSize: 13, color: COLORS.inkSoft, minWidth: 130 }}>{label}</span>
+      <span style={{ fontSize: 14, color: COLORS.ink, fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+}
+
+// ---------- Admin Dashboard ----------
+function AdminDashboard({ profiles, matches, onValidate, onReject, onLogout, onDeleteProfile, onRenew, onAddProfile }) {
+  const [tab, setTab] = useState("matches");
+  const [viewProfile, setViewProfile] = useState(null);
+  const [renewProfile, setRenewProfile] = useState(null);
+  const [showManualAdd, setShowManualAdd] = useState(false);
+
+  const pendingMatches = matches.filter(m => m.status === "pending");
+  const validatedMatches = matches.filter(m => m.status === "validated");
+  const expiredProfiles = profiles.filter(p => p.subscriptionExpiresAt && !isSubscriptionActive(p));
+
+  const getProfile = (id) => profiles.find(p => p.id === id);
+
+  return (
+    <div style={{ minHeight: "100vh", background: COLORS.cream }}>
+      <header style={{
+        background: COLORS.bordeauxDark, padding: "20px 28px", display: "flex",
+        justifyContent: "space-between", alignItems: "center"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Heart size={20} color={COLORS.gold} fill={COLORS.gold} />
+          <span style={{ fontFamily: "Playfair Display, serif", fontSize: 19, color: "#fff" }}>{AGENCY_NAME} — Espace agence</span>
+        </div>
+        <Button variant="ghost" onClick={onLogout} style={{ color: COLORS.goldLight }}>Se déconnecter</Button>
+      </header>
+
+      <div style={{ maxWidth: 880, margin: "0 auto", padding: "28px 20px" }}>
+        {expiredProfiles.length > 0 && (
+          <div style={{
+            background: "#FBEAEA", border: "1px solid #E3B8B8", borderRadius: 12,
+            padding: "14px 18px", marginBottom: 20, display: "flex", alignItems: "center",
+            justifyContent: "space-between", gap: 12, flexWrap: "wrap"
+          }}>
+            <span style={{ fontSize: 14, color: "#7A2222", fontWeight: 500 }}>
+              {expiredProfiles.length === 1
+                ? `${expiredProfiles[0].firstName} a un abonnement expiré et ne reçoit plus de matchs.`
+                : `${expiredProfiles.length} profils ont un abonnement expiré et ne reçoivent plus de matchs.`}
+            </span>
+            <Button variant="secondary" onClick={() => setTab("profiles")} style={{ padding: "8px 14px", fontSize: 13, borderColor: "#A33", color: "#A33" }}>
+              Voir et renouveler
+            </Button>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 28 }}>
+          {[
+            { id: "matches", label: `Matchs à valider (${pendingMatches.length})` },
+            { id: "validated", label: `Mises en contact (${validatedMatches.length})` },
+            { id: "profiles", label: `Tous les profils (${profiles.length})` },
+          ].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              padding: "10px 18px", borderRadius: 8, border: "none", cursor: "pointer",
+              fontSize: 14, fontWeight: 600,
+              background: tab === t.id ? COLORS.bordeaux : "#fff",
+              color: tab === t.id ? "#fff" : COLORS.inkSoft,
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {tab === "matches" && (
+          <div>
+            {pendingMatches.length === 0 && (
+              <EmptyState text="Aucun match en attente. Les nouveaux matchs apparaîtront ici automatiquement dès qu'un profil compatible est détecté." />
+            )}
+            {pendingMatches.sort((a, b) => b.score - a.score).map(m => {
+              const a = getProfile(m.aId), b = getProfile(m.bId);
+              if (!a || !b) return null;
+              return (
+                <div key={m.id} style={{
+                  background: "#fff", borderRadius: 12, padding: 20, marginBottom: 14,
+                  display: "flex", alignItems: "center", gap: 18, border: `1px solid ${COLORS.creamDark}`
+                }}>
+                  <ScoreRing score={m.score} />
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 14 }}>
+                    <ProfileMini profile={a} onClick={() => setViewProfile(a)} />
+                    <Heart size={16} color={COLORS.goldLight} fill={COLORS.goldLight} />
+                    <ProfileMini profile={b} onClick={() => setViewProfile(b)} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button variant="secondary" onClick={() => onReject(m.id)} style={{ padding: "9px 14px" }}>
+                      <X size={15} />
+                    </Button>
+                    <Button onClick={() => onValidate(m.id)} style={{ padding: "9px 16px" }}>
+                      <Check size={15} /> Mettre en contact
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === "validated" && (
+          <div>
+            {validatedMatches.length === 0 && <EmptyState text="Aucune mise en contact effectuée pour le moment." />}
+            {validatedMatches.map(m => {
+              const a = getProfile(m.aId), b = getProfile(m.bId);
+              if (!a || !b) return null;
+              return (
+                <div key={m.id} style={{
+                  background: "#fff", borderRadius: 12, padding: 20, marginBottom: 14,
+                  display: "flex", alignItems: "center", gap: 18, border: `1px solid ${COLORS.creamDark}`
+                }}>
+                  <ScoreRing score={m.score} />
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 14 }}>
+                    <ProfileMini profile={a} onClick={() => setViewProfile(a)} />
+                    <Check size={16} color="#3D7A5C" />
+                    <ProfileMini profile={b} onClick={() => setViewProfile(b)} />
+                  </div>
+                  <span style={{ fontSize: 12, color: COLORS.inkSoft }}>
+                    {new Date(m.validatedAt).toLocaleDateString("fr-FR")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === "profiles" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+              <Button onClick={() => setShowManualAdd(true)} variant="secondary">
+                <Plus size={16} /> Ajouter un profil manuellement
+              </Button>
+            </div>
+            {profiles.length === 0 && <EmptyState text="Aucun profil enregistré. Partagez le lien d'inscription à vos clients." />}
+            {profiles.map(p => {
+              const active = isSubscriptionActive(p);
+              const days = daysRemaining(p);
+              return (
+                <div key={p.id} style={{
+                  background: "#fff", borderRadius: 12, padding: 16, marginBottom: 10,
+                  display: "flex", alignItems: "center", gap: 14, border: `1px solid ${COLORS.creamDark}`
+                }}>
+                  <Avatar photo={p.photo} name={p.firstName} size={44} />
+                  <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setViewProfile(p)}>
+                    <span style={{ fontWeight: 600, color: COLORS.ink }}>{p.firstName}, {p.age} ans</span>
+                    <span style={{ color: COLORS.inkSoft, fontSize: 13, marginLeft: 10 }}>{p.city}</span>
+                  </div>
+                  <span style={{
+                    fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 20,
+                    background: active ? "#E8F3EC" : "#FBEAEA",
+                    color: active ? "#3D7A5C" : "#A33",
+                  }}>
+                    {active ? `Actif · ${days} j restants` : "Abonnement expiré"}
+                  </span>
+                  {!active && (
+                    <Button variant="secondary" onClick={() => setRenewProfile(p)} style={{ fontSize: 13, padding: "8px 12px" }}>
+                      Renouveler
+                    </Button>
+                  )}
+                  <Button variant="ghost" onClick={() => onDeleteProfile(p.id)} style={{ color: "#A33", fontSize: 13 }}>
+                    Retirer
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <ProfileCard profile={viewProfile} onClose={() => setViewProfile(null)} />
+      <RenewModal
+        profile={renewProfile}
+        onClose={() => setRenewProfile(null)}
+        onConfirm={(planId) => { onRenew(renewProfile.id, planId); setRenewProfile(null); }}
+      />
+      {showManualAdd && (
+        <div style={{
+          position: "fixed", inset: 0, background: COLORS.cream, zIndex: 200,
+          overflowY: "auto", padding: "40px 0"
+        }}>
+          <div style={{ maxWidth: 560, margin: "0 auto 20px", padding: "0 20px" }}>
+            <Button variant="ghost" onClick={() => setShowManualAdd(false)}>
+              <ArrowLeft size={16} /> Retour au tableau de bord
+            </Button>
+          </div>
+          <RegistrationForm
+            adminMode
+            onCancel={() => setShowManualAdd(false)}
+            onSubmit={(profile) => { onAddProfile(profile); setShowManualAdd(false); }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RenewModal({ profile, onClose, onConfirm }) {
+  if (!profile) return null;
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(42,36,34,0.55)", display: "flex",
+      alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20
+    }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: 16, maxWidth: 380, width: "100%", padding: 28 }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ fontFamily: "Playfair Display, serif", fontSize: 20, color: COLORS.bordeauxDark, marginTop: 0 }}>
+          Renouveler — {profile.firstName}
+        </h3>
+        <p style={{ color: COLORS.inkSoft, fontSize: 14, marginBottom: 18 }}>Choisissez la nouvelle formule.</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {SUBSCRIPTION_PLANS.map(plan => (
+            <button
+              key={plan.id}
+              onClick={() => onConfirm(plan.id)}
+              style={{
+                padding: "14px", borderRadius: 10,
+                border: `2px solid ${plan.vip ? COLORS.gold : COLORS.creamDark}`,
+                background: plan.vip ? COLORS.goldLight + "33" : COLORS.cream,
+                cursor: "pointer", textAlign: "left",
+                gridColumn: plan.vip ? "1 / -1" : "auto",
+              }}
+            >
+              <div style={{ fontSize: 12, color: COLORS.inkSoft, fontWeight: 600 }}>
+                {plan.vip ? "VIP · " : ""}{plan.months} mois
+              </div>
+              <div style={{ fontFamily: "Playfair Display, serif", fontSize: 18, color: COLORS.bordeauxDark }}>{plan.price} €</div>
+            </button>
+          ))}
+        </div>
+        <Button variant="ghost" onClick={onClose} style={{ marginTop: 16, width: "100%", justifyContent: "center" }}>Annuler</Button>
+      </div>
+    </div>
+  );
+}
+
+function ProfileMini({ profile, onClick }) {
+  return (
+    <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
+      <Avatar photo={profile.photo} name={profile.firstName} size={40} />
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink }}>{profile.firstName}, {profile.age}</div>
+        <div style={{ fontSize: 12, color: COLORS.inkSoft }}>{profile.city}</div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ text }) {
+  return (
+    <div style={{
+      textAlign: "center", padding: "48px 20px", color: COLORS.inkSoft, fontSize: 14.5,
+      background: "#fff", borderRadius: 12, border: `1px dashed ${COLORS.creamDark}`
+    }}>{text}</div>
+  );
+}
+
+// ---------- Match-confirmed view for clients (mutual unlock) ----------
+function MatchedView({ profile, partner, onBack }) {
+  return (
+    <div style={{ maxWidth: 460, margin: "40px auto", padding: "0 20px", textAlign: "center" }}>
+      <Sparkles size={32} color={COLORS.gold} style={{ marginBottom: 12 }} />
+      <h2 style={{ fontFamily: "Playfair Display, serif", fontSize: 26, color: COLORS.bordeauxDark }}>
+        Une mise en contact a été validée
+      </h2>
+      <p style={{ color: COLORS.inkSoft, marginBottom: 24 }}>L'agence a validé ce profil pour vous. Vous pouvez maintenant le découvrir.</p>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 28, border: `1px solid ${COLORS.creamDark}` }}>
+        <Avatar photo={partner.photo} name={partner.firstName} size={88} />
+        <h3 style={{ fontFamily: "Playfair Display, serif", fontSize: 22, margin: "16px 0 4px" }}>{partner.firstName}, {partner.age} ans</h3>
+        <p style={{ color: COLORS.inkSoft, fontSize: 14 }}>{partner.city}</p>
+        {partner.about && <p style={{ fontStyle: "italic", marginTop: 14, color: COLORS.ink }}>"{partner.about}"</p>}
+      </div>
+      <Button onClick={onBack} variant="secondary" style={{ marginTop: 24 }}>Retour</Button>
+    </div>
+  );
+}
+
+// ---------- Main App ----------
+export default function App() {
+  const [view, setView] = useState("home"); // home, register, admin-login, admin, confirmation
+  const [profiles, setProfiles] = useState([]);
+  const [matches, setMatches] = useState([]);
+  const [adminAuthed, setAdminAuthed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loginError, setLoginError] = useState(false);
+
+  const ADMIN_PASSWORD = "agence2026";
+
+  useEffect(() => {
+    (async () => {
+      const [p, m] = await Promise.all([loadProfiles(), loadMatches()]);
+      setProfiles(p);
+      setMatches(m);
+      setLoading(false);
+    })();
+  }, []);
+
+  // Recompute matches whenever profiles change
+  useEffect(() => {
+    if (loading) return;
+    const existingPairs = new Set(matches.map(m => [m.aId, m.bId].sort().join("|")));
+    const newMatches = [];
+    for (let i = 0; i < profiles.length; i++) {
+      for (let j = i + 1; j < profiles.length; j++) {
+        const a = profiles[i], b = profiles[j];
+        const key = [a.id, b.id].sort().join("|");
+        if (existingPairs.has(key)) continue;
+        const score = computeScore(a, b);
+        if (score >= 35) {
+          newMatches.push({ id: uid(), aId: a.id, bId: b.id, score, status: "pending", createdAt: Date.now() });
+        }
+      }
+    }
+    if (newMatches.length > 0) {
+      const updated = [...matches, ...newMatches];
+      setMatches(updated);
+      saveMatches(updated);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles, loading]);
+
+  const handleRegister = async (profile) => {
+    const updated = [...profiles, profile];
+    setProfiles(updated);
+    await saveProfiles(updated);
+    setView("confirmation");
+  };
+
+  const handleAddProfileManually = async (profile) => {
+    const updated = [...profiles, profile];
+    setProfiles(updated);
+    await saveProfiles(updated);
+  };
+
+  const handleValidate = async (matchId) => {
+    const updated = matches.map(m => m.id === matchId ? { ...m, status: "validated", validatedAt: Date.now() } : m);
+    setMatches(updated);
+    await saveMatches(updated);
+  };
+  const handleReject = async (matchId) => {
+    const updated = matches.map(m => m.id === matchId ? { ...m, status: "rejected" } : m);
+    setMatches(updated);
+    await saveMatches(updated);
+  };
+  const handleDeleteProfile = async (id) => {
+    const updated = profiles.filter(p => p.id !== id);
+    setProfiles(updated);
+    await saveProfiles(updated);
+  };
+
+  const handleRenew = async (id, planId) => {
+    const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
+    const now = Date.now();
+    const updated = profiles.map(p => p.id === id ? {
+      ...p,
+      subscriptionStartedAt: now,
+      subscriptionExpiresAt: addMonths(now, plan.months),
+      subscriptionPrice: plan?.price,
+      subscriptionPlanLabel: plan?.vip ? `VIP ${plan.months} mois` : `${plan.months} mois`,
+      isVip: !!plan?.vip,
+    } : p);
+    setProfiles(updated);
+    await saveProfiles(updated);
+  };
+
+  const handleAdminLogin = (pwd) => {
+    if (pwd === ADMIN_PASSWORD) { setAdminAuthed(true); setView("admin"); setLoginError(false); }
+    else { setLoginError(true); }
+  };
+
+  const fontImports = (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+      * { font-family: 'Inter', sans-serif; }
+      body { margin: 0; }
+    `}</style>
+  );
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.cream }}>
+        {fontImports}
+        <Heart size={28} color={COLORS.bordeaux} />
+      </div>
+    );
+  }
+
+  if (view === "admin" && adminAuthed) {
+    return (
+      <div>
+        {fontImports}
+        <AdminDashboard
+          profiles={profiles} matches={matches}
+          onValidate={handleValidate} onReject={handleReject}
+          onDeleteProfile={handleDeleteProfile}
+          onRenew={handleRenew}
+          onAddProfile={handleAddProfileManually}
+          onLogout={() => { setAdminAuthed(false); setView("home"); }}
+        />
+      </div>
+    );
+  }
+
+  if (view === "admin-login") {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.cream }}>
+        {fontImports}
+        <AdminLogin onLogin={handleAdminLogin} />
+        {loginError && (
+          <p style={{ textAlign: "center", color: "#A33", fontSize: 13 }}>Mot de passe incorrect, réessayez.</p>
+        )}
+        <div style={{ textAlign: "center" }}>
+          <Button variant="ghost" onClick={() => setView("home")}>Retour à l'accueil</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "register") {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.cream, padding: "48px 0" }}>
+        {fontImports}
+        <RegistrationForm onSubmit={handleRegister} onCancel={() => setView("home")} />
+      </div>
+    );
+  }
+
+  if (view === "confirmation") {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.cream, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {fontImports}
+        <div style={{ textAlign: "center", maxWidth: 420, padding: 20 }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: "50%", background: "#3D7A5C", margin: "0 auto 20px",
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}>
+            <Check size={28} color="#fff" />
+          </div>
+          <h2 style={{ fontFamily: "Playfair Display, serif", fontSize: 26, color: COLORS.bordeauxDark }}>
+            Votre profil a été transmis
+          </h2>
+          <p style={{ color: COLORS.inkSoft, marginTop: 10, lineHeight: 1.6 }}>
+            L'agence va l'examiner avec discrétion. Vous serez contacté(e) personnellement si un profil correspond à vos critères. Votre photo et vos informations restent confidentielles jusqu'à validation.
+          </p>
+          <Button onClick={() => setView("home")} style={{ marginTop: 24 }}>Retour à l'accueil</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Home
+  return (
+    <div style={{ minHeight: "100vh", background: COLORS.cream }}>
+      {fontImports}
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "80px 24px", textAlign: "center" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+          <Heart size={32} color={COLORS.bordeaux} fill={COLORS.bordeaux} />
+        </div>
+        <div style={{
+          fontFamily: "Playfair Display, serif", fontSize: 15, letterSpacing: "0.12em",
+          textTransform: "uppercase", color: COLORS.gold, fontWeight: 600, marginBottom: 18
+        }}>{AGENCY_NAME}</div>
+        <h1 style={{
+          fontFamily: "Playfair Display, serif", fontSize: 42, color: COLORS.bordeauxDark,
+          margin: "0 0 16px", lineHeight: 1.15
+        }}>
+          Des rencontres pensées<br />avec discrétion
+        </h1>
+        <p style={{ fontSize: 16, color: COLORS.inkSoft, maxWidth: 460, margin: "0 auto 40px", lineHeight: 1.6 }}>
+          Votre profil reste privé. Vous découvrez l'autre seulement lorsqu'une mise en
+          relation a été validée personnellement par l'agence.
+        </p>
+        <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+          <Button onClick={() => setView("register")} style={{ padding: "15px 32px", fontSize: 15.5 }}>
+            <Plus size={17} /> Créer mon profil
+          </Button>
+          <Button onClick={() => setView("admin-login")} variant="secondary" style={{ padding: "15px 32px", fontSize: 15.5 }}>
+            <Lock size={16} /> Espace agence
+          </Button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 72, textAlign: "left" }}>
+          <FeatureCard icon={Lock} title="Confidentialité totale" text="Personne ne voit votre profil avant une validation manuelle." />
+          <FeatureCard icon={Sparkles} title="Matching automatique" text="Les profils compatibles sont détectés selon vos critères réels." />
+          <FeatureCard icon={Users} title="Validation humaine" text="Aucune mise en contact sans l'accord de l'agence." />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeatureCard({ icon: Icon, title, text }) {
+  return (
+    <div style={{ background: "#fff", borderRadius: 12, padding: 22, border: `1px solid ${COLORS.creamDark}` }}>
+      <Icon size={20} color={COLORS.gold} />
+      <h4 style={{ fontFamily: "Playfair Display, serif", fontSize: 16, color: COLORS.bordeauxDark, margin: "12px 0 6px" }}>{title}</h4>
+      <p style={{ fontSize: 13.5, color: COLORS.inkSoft, lineHeight: 1.5, margin: 0 }}>{text}</p>
+    </div>
+  );
+}
