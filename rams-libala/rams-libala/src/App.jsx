@@ -820,7 +820,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
             </div>
 
             <div style={{ marginTop: 16 }}>
-              <Field label="Code promo" hint="Facultatif - si l agence vous en a fourni un">
+              <Field label="Code promo" hint="Si l agence vous en a fourni un">
                 <TextInput
                   value={form.promoCode}
                   onChange={e => set("promoCode", e.target.value.toUpperCase())}
@@ -832,7 +832,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                   background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 8,
                   padding: "10px 14px", fontSize: 13.5, color: "#2D5C3F"
                 }}>
-                  Code valide - votre inscription sera gratuite, sans paiement à effectuer.
+                  Code valide - votre inscription est confirmee.
                 </div>
               )}
             </div>
@@ -923,9 +923,6 @@ function AdminLogin({ onLogin }) {
       </div>
       {error && <p style={{ color: "#A33", fontSize: 13, marginBottom: 12 }}>Mot de passe incorrect.</p>}
       <Button onClick={handle} style={{ width: "100%", justifyContent: "center" }}>Se connecter</Button>
-      <p style={{ fontSize: 12, color: COLORS.inkSoft, marginTop: 24 }}>
-        Mot de passe par défaut : <span style={{ fontFamily: "ui-monospace, monospace" }}>agence2026</span> - modifiable dans le code.
-      </p>
     </div>
   );
 }
@@ -1375,7 +1372,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loginError, setLoginError] = useState(false);
 
-  const ADMIN_PASSWORD = "agence2026";
+  const ADMIN_PASSWORD = "Coucou2002#1";
 
   useEffect(() => {
     (async () => {
