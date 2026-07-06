@@ -25,7 +25,34 @@ const RELIGIONS = ["Christianisme", "Islam", "Judaïsme", "Hindouisme", "Bouddhi
 
 const SITUATIONS = ["Célibataire", "Divorcé(e)", "Veuf/Veuve"];
 
-const ZONES = ["France", "Europe", "Afrique", "Amérique", "Peu importe"];
+const ZONES = ["France", "Europe", "Afrique", "Amerique", "Peu importe"];
+
+const PAYS_EUROPE = [
+  "Allemagne", "Autriche", "Belgique", "Bulgarie", "Chypre", "Croatie", "Danemark",
+  "Espagne", "Estonie", "Finlande", "France", "Grece", "Hongrie", "Irlande", "Italie",
+  "Lettonie", "Lituanie", "Luxembourg", "Malte", "Pays-Bas", "Pologne", "Portugal",
+  "Republique tcheque", "Roumanie", "Slovaquie", "Slovenie", "Suede",
+  "Suisse", "Royaume-Uni", "Norvege", "Serbie", "Ukraine", "Autre pays Europe"
+];
+
+const PAYS_AFRIQUE = [
+  "Algerie", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cameroun",
+  "Cap-Vert", "Centrafrique", "Comores", "Congo Brazzaville", "Congo RDC", "Cote d Ivoire",
+  "Djibouti", "Egypte", "Erythree", "Ethiopie", "Gabon", "Gambie", "Ghana", "Guinee",
+  "Guinee-Bissau", "Guinee equatoriale", "Kenya", "Lesotho", "Liberia", "Libye",
+  "Madagascar", "Malawi", "Mali", "Maroc", "Maurice", "Mauritanie", "Mozambique",
+  "Namibie", "Niger", "Nigeria", "Ouganda", "Rwanda", "Sao Tome-et-Principe",
+  "Senegal", "Sierra Leone", "Somalie", "Soudan", "Soudan du Sud", "Swaziland",
+  "Tanzanie", "Tchad", "Togo", "Tunisie", "Zambie", "Zimbabwe", "Autre pays Afrique"
+];
+
+const PAYS_AMERIQUE = [
+  "Canada", "Etats-Unis", "Mexique", "Guatemala", "Cuba", "Haiti", "Jamaique",
+  "Republique dominicaine", "Trinidad-et-Tobago", "Colombie", "Venezuela", "Guyana",
+  "Suriname", "Bresil", "Perou", "Bolivie", "Equateur", "Chili", "Argentine",
+  "Uruguay", "Paraguay", "Martinique", "Guadeloupe", "Guyane francaise",
+  "Autre pays Amerique"
+];
 
 const AGENCY_NAME = "RAM'S Libala";
 
@@ -34,9 +61,7 @@ const FREE_ACCESS_CODES = ["RAMSLIBALA-OFFERT", "BIENVENUE2026"];
 
 // Modifiable ici : durée en mois -> prix en euros, profils garantis, et type de formule
 const SUBSCRIPTION_PLANS = [
-  { id: "standard-3", months: 3, price: 60, profiles: "3 à 4 profils proposés", stripeLink: "https://buy.stripe.com/aFacN794cb2idTI34w1ZS02" },
   { id: "standard-6", months: 6, price: 99, profiles: "5 à 6 profils proposés", stripeLink: "https://buy.stripe.com/fZu4gBgwEeeu6rg20s1ZS03" },
-  { id: "standard-9", months: 9, price: 135, profiles: "7 à 8 profils proposés", stripeLink: "https://buy.stripe.com/00w7sN5S02vMaHwawY1ZS04" },
   { id: "standard-12", months: 12, price: 160, profiles: "9 à 11 profils proposés", stripeLink: "https://buy.stripe.com/7sY6oJ3JSc6m4j8dJa1ZS05" },
   {
     id: "vip-3", months: 3, price: 250, vip: true,
@@ -297,10 +322,13 @@ function Avatar({ photo, name, size = 48 }) {
 // ---------- Registration Form ----------
 function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const [form, setForm] = useState({
-    firstName: "", age: "", gender: "", city: "", situation: "", hasChildren: "", numberOfChildren: "", childrenAges: "", wantsChildren: "",
-    religion: "", profession: "", interests: [], lookingForGender: "", ageMin: "", ageMax: "",
+    firstName: "", age: "", gender: "", city: "", country: "", email: "", phone: "", nationality: "", situation: "", hasChildren: "", numberOfChildren: "", childrenAges: "", wantsChildren: "",
+    religion: "", profession: "", educationLevel: "", smoker: "", lifestyle: "", housingStatus: "", availability: "", morphology: "", lookingForMorphology: "",
+    interests: [], lookingForGender: "", ageMin: "", ageMax: "",
     height: "", lookingForHeightMin: "", lookingForHeightMax: "", acceptedZones: [],
-    about: "", photo: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "",
+    dealbreakers: "", selfDescription: "", whyAgency: "",
+    about: "", photo: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "",
+    selectedCountries: [],
   });
   const [step, setStep] = useState(0);
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -311,6 +339,9 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   }));
   const toggleZone = (z) => setForm(f => ({
     ...f, acceptedZones: f.acceptedZones.includes(z) ? f.acceptedZones.filter(x => x !== z) : [...f.acceptedZones, z]
+  }));
+  const toggleCountry = (c) => setForm(f => ({
+    ...f, selectedCountries: f.selectedCountries.includes(c) ? f.selectedCountries.filter(x => x !== c) : [...f.selectedCountries, c]
   }));
 
   const handlePhoto = (e) => {
@@ -330,24 +361,27 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const steps = adminMode ? [
     { title: "Vos informations", icon: User },
     { title: "Vos critères de vie", icon: MapPin },
-    { title: "Vos centres d'intérêt", icon: Sparkles },
+    { title: "Votre personnalité", icon: Sparkles },
+    { title: "Vos centres d interet", icon: Heart },
     { title: "Ce que vous recherchez", icon: Heart },
   ] : [
     { title: "Vos informations", icon: User },
     { title: "Vos critères de vie", icon: MapPin },
-    { title: "Vos centres d'intérêt", icon: Sparkles },
+    { title: "Votre personnalité", icon: Sparkles },
+    { title: "Vos centres d interet", icon: Heart },
     { title: "Ce que vous recherchez", icon: Heart },
     { title: "Choisissez votre formule", icon: Lock },
     { title: "Contrat et paiement", icon: Check },
   ];
 
   const canNext = () => {
-    if (step === 0) return form.firstName && form.age && form.gender;
-    if (step === 1) return form.city && form.situation && form.hasChildren && form.wantsChildren;
-    if (step === 2) return form.interests.length > 0;
-    if (step === 3) return form.lookingForGender && form.ageMin && form.ageMax;
-    if (!adminMode && step === 4) return !!form.subscriptionPlanId;
-    if (!adminMode && step === 5) return !!form.contractAccepted;
+    if (step === 0) return form.firstName && form.age && form.gender && form.photo && form.profession && form.height && form.email && form.phone && form.morphology;
+    if (step === 1) return form.city && form.country && form.situation && form.hasChildren && form.wantsChildren;
+    if (step === 2) return true; // personnalité facultative
+    if (step === 3) return form.interests.length > 0;
+    if (step === 4) return form.lookingForGender && form.ageMin && form.ageMax;
+    if (!adminMode && step === 5) return !!form.subscriptionPlanId;
+    if (!adminMode && step === 6) return !!form.contractAccepted;
     return true;
   };
 
@@ -407,22 +441,31 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
             <TextInput value={form.firstName} onChange={e => set("firstName", e.target.value)} placeholder="Votre prénom" />
           </Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Field label="Âge">
+            <Field label="Age">
               <TextInput type="number" value={form.age} onChange={e => set("age", e.target.value)} placeholder="35" />
             </Field>
             <Field label="Genre">
               <Select value={form.gender} onChange={e => set("gender", e.target.value)} placeholder="Choisir" options={["Femme", "Homme"]} />
             </Field>
           </div>
+          <Field label="Email *">
+            <TextInput type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="votre@email.com" />
+          </Field>
+          <Field label="Telephone *">
+            <TextInput type="tel" value={form.phone} onChange={e => set("phone", e.target.value)} placeholder="+33 6 00 00 00 00" />
+          </Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <Field label="Taille (en cm)" hint="Facultatif">
+            <Field label="Taille (en cm) *">
               <TextInput type="number" value={form.height} onChange={e => set("height", e.target.value)} placeholder="170" />
             </Field>
-            <Field label="Profession" hint="Facultatif">
+            <Field label="Profession *">
               <TextInput value={form.profession} onChange={e => set("profession", e.target.value)} placeholder="Votre métier" />
             </Field>
           </div>
-          <Field label="Votre photo" hint="Visible uniquement par l'agence, puis par votre futur match validé">
+          <Field label="Votre morphologie *" hint="Comment decririez-vous votre silhouette ?">
+            <Select value={form.morphology} onChange={e => set("morphology", e.target.value)} placeholder="Choisir" options={["Mince", "Svelte / athletique", "Sportif(ve)", "Corpulent(e) / rond(e)", "En surpoids", "Peu importe"]} />
+          </Field>
+          <Field label="Votre photo *" hint="Visible uniquement par l agence, puis par votre futur match valide">
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar photo={photoPreview} name={form.firstName} size={64} />
               <label style={{
@@ -440,8 +483,16 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
 
       {step === 1 && (
         <>
-          <Field label="Ville">
-            <TextInput value={form.city} onChange={e => set("city", e.target.value)} placeholder="Votre ville" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <Field label="Ville">
+              <TextInput value={form.city} onChange={e => set("city", e.target.value)} placeholder="Votre ville" />
+            </Field>
+            <Field label="Pays de residence">
+              <TextInput value={form.country} onChange={e => set("country", e.target.value)} placeholder="France" />
+            </Field>
+          </div>
+          <Field label="Nationalite">
+            <TextInput value={form.nationality} onChange={e => set("nationality", e.target.value)} placeholder="Ex : Francaise, Congolaise, Camerounaise..." />
           </Field>
           <Field label="Situation familiale">
             <Select value={form.situation} onChange={e => set("situation", e.target.value)} placeholder="Choisir" options={SITUATIONS} />
@@ -451,7 +502,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           </Field>
           {form.hasChildren === "Oui" && (
             <>
-              <Field label="Combien d'enfants ?">
+              <Field label="Combien d enfants ?">
                 <TextInput type="number" value={form.numberOfChildren} onChange={e => set("numberOfChildren", e.target.value)} placeholder="2" />
               </Field>
               <Field label="Âge(s) des enfants" hint="Ex : 4 et 9 ans">
@@ -462,13 +513,47 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           <Field label="Désirez-vous encore des enfants ?">
             <Select value={form.wantsChildren} onChange={e => set("wantsChildren", e.target.value)} placeholder="Choisir" options={["Oui", "Non", "Peu importe"]} />
           </Field>
-          <Field label="Religion" hint="Facultatif, utilisé seulement si c'est important pour vous">
+          <Field label="Religion" hint="Facultatif, utilise seulement si c est important pour vous">
             <Select value={form.religion} onChange={e => set("religion", e.target.value)} placeholder="Choisir" options={RELIGIONS} />
           </Field>
         </>
       )}
 
       {step === 2 && (
+        <>
+          <Field label="Niveau d etudes" hint="Facultatif">
+            <Select value={form.educationLevel} onChange={e => set("educationLevel", e.target.value)} placeholder="Choisir" options={["Brevet / CAP / BEP", "Baccalauréat", "Bac+2 / BTS / DUT", "Bac+3 / Licence", "Bac+5 / Master", "Doctorat / Grande école", "Autre"]} />
+          </Field>
+          <Field label="Fumeur / Fumeuse ?">
+            <Select value={form.smoker} onChange={e => set("smoker", e.target.value)} placeholder="Choisir" options={["Non fumeur(se)", "Fumeur(se)", "Fumeur(se) occasionnel(le)", "En cours d'arrêt"]} />
+          </Field>
+          <Field label="Situation de logement" hint="Facultatif">
+            <Select value={form.housingStatus} onChange={e => set("housingStatus", e.target.value)} placeholder="Choisir" options={["Propriétaire", "Locataire", "Heberge chez un proche", "Autre"]} />
+          </Field>
+          <Field label="Consommez-vous de l alcool ?">
+            <Select value={form.availability} onChange={e => set("availability", e.target.value)} placeholder="Choisir" options={["Non, jamais", "Occasionnellement", "Oui, regulierement"]} />
+          </Field>
+          <Field label="Décrivez-vous en quelques mots" hint="Facultatif - votre caractère, vos valeurs, ce qui vous rend unique">
+            <textarea
+              value={form.selfDescription} onChange={e => set("selfDescription", e.target.value)}
+              placeholder="Ex : Je suis quelquun de calme, attentionne(e), qui aime la famille et les valeurs traditionnelles..."
+              style={{ ...inputStyle, minHeight: 90, resize: "vertical", fontFamily: "Inter, sans-serif" }}
+            />
+          </Field>
+          <Field label="Ce qui est redhibitoire pour vous" hint="Facultatif - ce que vous refusez absolument chez l autre">
+            <textarea
+              value={form.dealbreakers} onChange={e => set("dealbreakers", e.target.value)}
+              placeholder="Ex : Je ne souhaite pas quelquun qui fume, ou qui ne veut pas denfants..."
+              style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: "Inter, sans-serif" }}
+            />
+          </Field>
+          <Field label="Pourquoi faire appel a une agence ?" hint="Facultatif">
+            <Select value={form.whyAgency} onChange={e => set("whyAgency", e.target.value)} placeholder="Choisir" options={["Manque de temps pour chercher seul", "Les applis de rencontre ne me conviennent pas", "Je veux une demarche serieuse et encadree", "Recommande par un proche", "Autre"]} />
+          </Field>
+        </>
+      )}
+
+      {step === 3 && (
         <Field label="Sélectionnez ce qui vous correspond" hint="Choisissez-en plusieurs">
           <div style={{ marginTop: 4 }}>
             {INTERESTS.map(i => (
@@ -478,7 +563,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
         </Field>
       )}
 
-      {step === 3 && (
+      {step === 4 && (
         <>
           <Field label="Vous recherchez">
             <Select value={form.lookingForGender} onChange={e => set("lookingForGender", e.target.value)} placeholder="Choisir" options={["Femme", "Homme", "Peu importe"]} />
@@ -499,24 +584,57 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
               <TextInput type="number" value={form.lookingForHeightMax} onChange={e => set("lookingForHeightMax", e.target.value)} placeholder="195" />
             </Field>
           </div>
-          <Field label="Zones géographiques acceptées" hint="Acceptez-vous une relation à distance avec une personne basée ailleurs ?">
+          <Field label="Type physique recherche" hint="Facultatif">
+            <Select value={form.lookingForMorphology} onChange={e => set("lookingForMorphology", e.target.value)} placeholder="Choisir" options={["Mince", "Svelte / athletique", "Sportif(ve)", "Corpulent(e) / rond(e)", "Peu importe"]} />
+          </Field>
+          <Field label="Zones geographiques acceptees" hint="Selectionnez les zones, puis les pays si vous le souhaitez">
             <div style={{ marginTop: 4 }}>
               {ZONES.map(z => (
                 <Pill key={z} active={form.acceptedZones.includes(z)} onClick={() => toggleZone(z)}>{z}</Pill>
               ))}
             </div>
+            {form.acceptedZones.includes("Europe") && !form.acceptedZones.includes("Peu importe") && (
+              <div style={{ marginTop: 14, padding: 14, background: COLORS.cream, borderRadius: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>Pays d Europe</div>
+                <div style={{ display: "flex", flexWrap: "wrap" }}>
+                  {PAYS_EUROPE.map(p => (
+                    <Pill key={p} active={form.selectedCountries.includes(p)} onClick={() => toggleCountry(p)}>{p}</Pill>
+                  ))}
+                </div>
+              </div>
+            )}
+            {form.acceptedZones.includes("Afrique") && !form.acceptedZones.includes("Peu importe") && (
+              <div style={{ marginTop: 14, padding: 14, background: COLORS.cream, borderRadius: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>Pays d Afrique</div>
+                <div style={{ display: "flex", flexWrap: "wrap" }}>
+                  {PAYS_AFRIQUE.map(p => (
+                    <Pill key={p} active={form.selectedCountries.includes(p)} onClick={() => toggleCountry(p)}>{p}</Pill>
+                  ))}
+                </div>
+              </div>
+            )}
+            {form.acceptedZones.includes("Amerique") && !form.acceptedZones.includes("Peu importe") && (
+              <div style={{ marginTop: 14, padding: 14, background: COLORS.cream, borderRadius: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>Pays d Amerique</div>
+                <div style={{ display: "flex", flexWrap: "wrap" }}>
+                  {PAYS_AMERIQUE.map(p => (
+                    <Pill key={p} active={form.selectedCountries.includes(p)} onClick={() => toggleCountry(p)}>{p}</Pill>
+                  ))}
+                </div>
+              </div>
+            )}
           </Field>
           <Field label="Quelques mots sur vous ou ce que vous recherchez" hint="Facultatif">
             <textarea
               value={form.about} onChange={e => set("about", e.target.value)}
-              placeholder="Ce qui compte pour vous chez l'autre..."
+              placeholder="Ce qui compte pour vous chez l autre..."
               style={{ ...inputStyle, minHeight: 90, resize: "vertical", fontFamily: "Inter, sans-serif" }}
             />
           </Field>
         </>
       )}
 
-      {step === 4 && (
+      {step === 5 && (
         <Field label="Sélectionnez votre formule" hint="Votre profil sera actif pendant toute la durée choisie">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             {SUBSCRIPTION_PLANS.filter(p => !p.vip).map(plan => {
@@ -579,7 +697,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
         </Field>
       )}
 
-      {step === 5 && (() => {
+      {step === 6 && (() => {
         const plan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
         return (
           <>
@@ -588,10 +706,10 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
               padding: 22, maxHeight: 320, overflowY: "auto", fontSize: 13.5, color: COLORS.ink, lineHeight: 1.7
             }}>
               <h4 style={{ fontFamily: "Playfair Display, serif", fontSize: 17, color: COLORS.bordeauxDark, marginTop: 0 }}>
-                Contrat de mise en relation — {AGENCY_NAME}
+                Contrat de mise en relation - {AGENCY_NAME}
               </h4>
               <p><strong>1. Objet.</strong> {AGENCY_NAME} propose un service de mise en relation entre personnes célibataires, sur la base des critères déclarés par le client lors de son inscription.</p>
-              <p><strong>2. Formule souscrite.</strong> {plan ? `${plan.vip ? "VIP " : ""}${plan.months} mois — ${plan.profiles} — ${plan.price} €` : "—"}.{plan?.vip && " La formule VIP comprend : (a) un entretien personnalisé en présentiel entre le client et l'agence, proposé uniquement aux clients résidant en France métropolitaine ; cette prestation pourra être étendue à l'international ultérieurement ; (b) l'organisation logistique des deux premiers rendez-vous de mise en relation (choix du lieu et de l'horaire par l'agence). Lors de ces rendez-vous de mise en relation, l'agence n'est pas présente : seules les deux personnes mises en relation s'y rencontrent."}</p>
+              <p><strong>2. Formule souscrite.</strong> {plan ? `${plan.vip ? "VIP " : ""}${plan.months} mois - ${plan.profiles} - ${plan.price} €` : "-"}.{plan?.vip && " La formule VIP comprend : (a) un entretien personnalisé en présentiel entre le client et l'agence, proposé uniquement aux clients résidant en France métropolitaine ; cette prestation pourra être étendue à l'international ultérieurement ; (b) l'organisation logistique des deux premiers rendez-vous de mise en relation (choix du lieu et de l'horaire par l'agence). Lors de ces rendez-vous de mise en relation, l'agence n'est pas présente : seules les deux personnes mises en relation s'y rencontrent."}</p>
               <p><strong>3. Obligation de moyens.</strong> {AGENCY_NAME} s'engage à mettre en œuvre les moyens nécessaires à la recherche de profils compatibles (sélection, vérification déclarative, mise en relation). {AGENCY_NAME} n'a pas d'obligation de résultat et ne garantit pas la conclusion d'une relation durable.</p>
               <p><strong>4. Confidentialité.</strong> Les informations et la photo transmises restent strictement confidentielles et ne sont communiquées à un autre client qu'après validation d'une mise en relation par {AGENCY_NAME}.</p>
               <p><strong>5. Durée et expiration.</strong> L'abonnement est valable pour la durée choisie à compter de la date de paiement. À l'expiration, le profil n'est plus proposé dans le cadre du matching jusqu'à son renouvellement.</p>
@@ -606,7 +724,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                 style={{ marginTop: 3, width: 17, height: 17, cursor: "pointer", accentColor: COLORS.bordeaux }}
               />
               <span style={{ fontSize: 14, color: COLORS.ink }}>
-                J'ai lu et j'accepte les termes du contrat ci-dessus. Je comprends que mon paiement valide mon inscription auprès de {AGENCY_NAME}.
+                J ai lu et j accepte les termes du contrat ci-dessus. Je comprends que mon paiement valide mon inscription auprès de {AGENCY_NAME}.
               </span>
             </label>
 
@@ -702,7 +820,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
             </div>
 
             <div style={{ marginTop: 16 }}>
-              <Field label="Code promo" hint="Facultatif — si l'agence vous en a fourni un">
+              <Field label="Code promo" hint="Facultatif - si l agence vous en a fourni un">
                 <TextInput
                   value={form.promoCode}
                   onChange={e => set("promoCode", e.target.value.toUpperCase())}
@@ -714,7 +832,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                   background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 8,
                   padding: "10px 14px", fontSize: 13.5, color: "#2D5C3F"
                 }}>
-                  Code valide — votre inscription sera gratuite, sans paiement à effectuer.
+                  Code valide - votre inscription sera gratuite, sans paiement à effectuer.
                 </div>
               )}
             </div>
@@ -738,16 +856,29 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           >
             Procéder au paiement ({selectedPlan.price} €)
           </Button>
+        ) : needsRealPayment && paymentConfirmed && !form.paymentReference ? (
+          <Button disabled variant="gold">
+            <Check size={16} /> Entrez votre référence de paiement
+          </Button>
         ) : (
           <Button onClick={handleSubmit} disabled={!canNext()} variant="gold">
-            <Check size={16} /> {adminMode ? "Ajouter ce profil" : needsRealPayment ? "J'ai terminé mon paiement" : "Envoyer mon profil"}
+            <Check size={16} /> {adminMode ? "Ajouter ce profil" : needsRealPayment ? "J ai termine mon paiement" : "Envoyer mon profil"}
           </Button>
         )}
       </div>
       {needsRealPayment && paymentConfirmed && (
-        <p style={{ fontSize: 12.5, color: COLORS.inkSoft, textAlign: "center", marginTop: 12 }}>
-          Une fois votre paiement confirmé sur la page Stripe, cliquez ci-dessus pour finaliser votre inscription.
-        </p>
+        <div style={{ marginTop: 16 }}>
+          <Field label="Référence de paiement (obligatoire)" hint="Copiez le numéro de commande reçu par email après votre paiement Stripe (commence par cs_)">
+            <TextInput
+              value={form.paymentReference || ""}
+              onChange={e => set("paymentReference", e.target.value)}
+              placeholder="cs_live_xxxxxxxxxxxx"
+            />
+          </Field>
+          <p style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 4 }}>
+            Ce numéro se trouve dans l'email de confirmation envoyé par Stripe après votre paiement.
+          </p>
+        </div>
       )}
     </div>
   );
@@ -793,7 +924,7 @@ function AdminLogin({ onLogin }) {
       {error && <p style={{ color: "#A33", fontSize: 13, marginBottom: 12 }}>Mot de passe incorrect.</p>}
       <Button onClick={handle} style={{ width: "100%", justifyContent: "center" }}>Se connecter</Button>
       <p style={{ fontSize: 12, color: COLORS.inkSoft, marginTop: 24 }}>
-        Mot de passe par défaut : <span style={{ fontFamily: "ui-monospace, monospace" }}>agence2026</span> — modifiable dans le code.
+        Mot de passe par défaut : <span style={{ fontFamily: "ui-monospace, monospace" }}>agence2026</span> - modifiable dans le code.
       </p>
     </div>
   );
@@ -826,19 +957,31 @@ function downloadProfileAsPdf(profile) {
       <div class="sub">${profile.city || ""} ${profile.profession ? "· " + profile.profession : ""}</div>
       <table>
         ${row("Genre", profile.gender)}
+        ${row("Email", profile.email)}
+        ${row("Telephone", profile.phone)}
+        ${row("Nationalite", profile.nationality)}
+        ${row("Ville / Pays", `${profile.city || ""}${profile.country ? " - " + profile.country : ""}`)}
         ${row("Situation", profile.situation)}
         ${row("A des enfants", profile.hasChildren === "Oui" ? `Oui (${profile.numberOfChildren || "?"}, âge${(profile.numberOfChildren || 0) > 1 ? "s" : ""} : ${profile.childrenAges || "non précisé"})` : profile.hasChildren)}
         ${row("Désire encore des enfants", profile.wantsChildren)}
         ${row("Religion", profile.religion)}
+        ${row("Niveau d etudes", profile.educationLevel)}
+        ${row("Fumeur(se)", profile.smoker)}
+        ${row("Logement", profile.housingStatus)}
+        ${row("Disponibilité", profile.availability)}
         ${row("Taille", profile.height ? profile.height + " cm" : "")}
+        ${row("Morphologie", profile.morphology)}
         ${row("Recherche", `${profile.lookingForGender || ""}, ${profile.ageMin || "?"}-${profile.ageMax || "?"} ans`)}
-        ${row("Taille recherchée", (profile.lookingForHeightMin || profile.lookingForHeightMax) ? `${profile.lookingForHeightMin || "—"} à ${profile.lookingForHeightMax || "—"} cm` : "")}
+        ${row("Type physique recherche", profile.lookingForMorphology)}
+        ${row("Taille recherchée", (profile.lookingForHeightMin || profile.lookingForHeightMax) ? `${profile.lookingForHeightMin || "-"} à ${profile.lookingForHeightMax || "-"} cm` : "")}
         ${row("Zones acceptées", (profile.acceptedZones || []).join(", "))}
         ${row("Formule", profile.subscriptionPlanLabel)}
         ${row("Statut abonnement", isSubscriptionActive(profile) ? `Actif (${daysRemaining(profile)} j restants)` : "Expiré")}
       </table>
       <div style="margin-top:18px;">${interestsHtml}</div>
-      ${profile.about ? `<div class="about">"${profile.about}"</div>` : ""}
+      ${profile.selfDescription ? `<div class="about">"${profile.selfDescription}"</div>` : ""}
+      ${profile.dealbreakers ? `<p style="margin-top:12px;font-size:13px;color:#6B5F58;"><strong>Rédhibitoires :</strong> ${profile.dealbreakers}</p>` : ""}
+      ${profile.about ? `<p style="margin-top:8px;font-size:13px;color:#6B5F58;font-style:italic;">${profile.about}</p>` : ""}
     </body>
     </html>
   `;
@@ -872,7 +1015,7 @@ function ProfileCard({ profile, onClose }) {
                 }}>VIP</span>
               )}
             </div>
-            <p style={{ color: COLORS.inkSoft, fontSize: 14, margin: "4px 0 0" }}>{profile.city} · {profile.profession || "—"}</p>
+            <p style={{ color: COLORS.inkSoft, fontSize: 14, margin: "4px 0 0" }}>{profile.city} · {profile.profession || "-"}</p>
           </div>
         </div>
         {profile.isVip && (
@@ -880,19 +1023,40 @@ function ProfileCard({ profile, onClose }) {
             background: COLORS.goldLight + "33", border: `1px solid ${COLORS.goldLight}`, borderRadius: 10,
             padding: "12px 14px", marginBottom: 16, fontSize: 13.5, color: COLORS.bordeauxDark
           }}>
-            Formule VIP — pensez à organiser l'entretien personnalisé en présentiel avec ce client, ainsi que la logistique (lieu et horaire) des deux premiers rendez-vous de mise en relation. Vous n'avez pas à être présente à ces deux rendez-vous.
+            Formule VIP - pensez à organiser l'entretien personnalisé en présentiel avec ce client, ainsi que la logistique (lieu et horaire) des deux premiers rendez-vous de mise en relation. Vous n'avez pas à être présente à ces deux rendez-vous.
           </div>
         )}
+        <DetailRow icon={MapPin} label="Ville / Pays" value={`${profile.city || ""}${profile.country ? " - " + profile.country : ""}`} />
+        {profile.nationality && <DetailRow icon={User} label="Nationalite" value={profile.nationality} />}
+        {profile.email && <DetailRow icon={User} label="Email" value={profile.email} />}
+        {profile.phone && <DetailRow icon={User} label="Telephone" value={profile.phone} />}
         <DetailRow icon={MapPin} label="Situation" value={profile.situation} />
-        <DetailRow icon={Heart} label="Enfants souhaités" value={profile.wantsChildren} />
+        <DetailRow icon={Heart} label="A des enfants" value={profile.hasChildren === "Oui" ? `Oui (${profile.numberOfChildren || "?"}, âges : ${profile.childrenAges || "non précisé"})` : profile.hasChildren} />
+        <DetailRow icon={Heart} label="Désire des enfants" value={profile.wantsChildren} />
         <DetailRow icon={Briefcase} label="Religion" value={profile.religion || "Non précisé"} />
+        {profile.educationLevel && <DetailRow icon={Briefcase} label="Études" value={profile.educationLevel} />}
+        {profile.smoker && <DetailRow icon={User} label="Fumeur(se)" value={profile.smoker} />}
+        {profile.housingStatus && <DetailRow icon={MapPin} label="Logement" value={profile.housingStatus} />}
+        {profile.availability && <DetailRow icon={Calendar} label="Disponibilité" value={profile.availability} />}
         <DetailRow icon={Calendar} label="Recherche" value={`${profile.lookingForGender}, ${profile.ageMin}-${profile.ageMax} ans`} />
         {profile.height && <DetailRow icon={User} label="Sa taille" value={`${profile.height} cm`} />}
+        {profile.morphology && <DetailRow icon={User} label="Morphologie" value={profile.morphology} />}
         {(profile.lookingForHeightMin || profile.lookingForHeightMax) && (
-          <DetailRow icon={User} label="Taille recherchée" value={`${profile.lookingForHeightMin || "—"} à ${profile.lookingForHeightMax || "—"} cm`} />
+          <DetailRow icon={User} label="Taille recherchee" value={`${profile.lookingForHeightMin || "-"} a ${profile.lookingForHeightMax || "-"} cm`} />
         )}
+        {profile.lookingForMorphology && <DetailRow icon={User} label="Type physique recherche" value={profile.lookingForMorphology} />}
         {(profile.acceptedZones || []).length > 0 && (
           <DetailRow icon={MapPin} label="Zones acceptées" value={profile.acceptedZones.join(", ")} />
+        )}
+        {profile.selfDescription && (
+          <div style={{ marginTop: 12, padding: 12, background: COLORS.cream, borderRadius: 8, fontSize: 13.5, fontStyle: "italic", color: COLORS.ink }}>
+            "{profile.selfDescription}"
+          </div>
+        )}
+        {profile.dealbreakers && (
+          <div style={{ marginTop: 8, fontSize: 13, color: COLORS.inkSoft }}>
+            <strong>Rédhibitoires :</strong> {profile.dealbreakers}
+          </div>
         )}
         {profile.subscriptionExpiresAt && (
           <DetailRow
@@ -956,7 +1120,7 @@ function AdminDashboard({ profiles, matches, onValidate, onReject, onLogout, onD
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Heart size={20} color={COLORS.gold} fill={COLORS.gold} />
-          <span style={{ fontFamily: "Playfair Display, serif", fontSize: 19, color: "#fff" }}>{AGENCY_NAME} — Espace agence</span>
+          <span style={{ fontFamily: "Playfair Display, serif", fontSize: 19, color: "#fff" }}>{AGENCY_NAME} - Espace agence</span>
         </div>
         <Button variant="ghost" onClick={onLogout} style={{ color: COLORS.goldLight }}>Se déconnecter</Button>
       </header>
@@ -997,7 +1161,7 @@ function AdminDashboard({ profiles, matches, onValidate, onReject, onLogout, onD
         {tab === "matches" && (
           <div>
             {pendingMatches.length === 0 && (
-              <EmptyState text="Aucun match en attente. Les nouveaux matchs apparaîtront ici automatiquement dès qu'un profil compatible est détecté." />
+              <EmptyState text="Aucun match en attente. Les nouveaux matchs apparaitront ici automatiquement des qu un profil compatible est detecte." />
             )}
             {pendingMatches.sort((a, b) => b.score - a.score).map(m => {
               const a = getProfile(m.aId), b = getProfile(m.bId);
@@ -1060,7 +1224,7 @@ function AdminDashboard({ profiles, matches, onValidate, onReject, onLogout, onD
                 <Plus size={16} /> Ajouter un profil manuellement
               </Button>
             </div>
-            {profiles.length === 0 && <EmptyState text="Aucun profil enregistré. Partagez le lien d'inscription à vos clients." />}
+            {profiles.length === 0 && <EmptyState text="Aucun profil enregistré. Partagez le lien d inscription a vos clients." />}
             {profiles.map(p => {
               const active = isSubscriptionActive(p);
               const days = daysRemaining(p);
@@ -1132,7 +1296,7 @@ function RenewModal({ profile, onClose, onConfirm }) {
     }} onClick={onClose}>
       <div style={{ background: "#fff", borderRadius: 16, maxWidth: 380, width: "100%", padding: 28 }} onClick={e => e.stopPropagation()}>
         <h3 style={{ fontFamily: "Playfair Display, serif", fontSize: 20, color: COLORS.bordeauxDark, marginTop: 0 }}>
-          Renouveler — {profile.firstName}
+          Renouveler - {profile.firstName}
         </h3>
         <p style={{ color: COLORS.inkSoft, fontSize: 14, marginBottom: 18 }}>Choisissez la nouvelle formule.</p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1409,7 +1573,7 @@ export default function App() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 72, textAlign: "left" }}>
           <FeatureCard icon={Lock} title="Confidentialité totale" text="Personne ne voit votre profil avant une validation manuelle." />
           <FeatureCard icon={Sparkles} title="Matching automatique" text="Les profils compatibles sont détectés selon vos critères réels." />
-          <FeatureCard icon={Users} title="Validation humaine" text="Aucune mise en contact sans l'accord de l'agence." />
+          <FeatureCard icon={Users} title="Validation humaine" text="Aucune mise en contact sans l accord de l agence." />
         </div>
       </div>
     </div>
