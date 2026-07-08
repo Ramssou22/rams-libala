@@ -376,10 +376,24 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { setPhotoPreview(reader.result); set("photo", reader.result); };
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 700;
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.7);
+        setPhotoPreview(compressed);
+        set("photo", compressed);
+      };
+      img.src = reader.result;
+    };
     reader.readAsDataURL(file);
   };
-
   const selectedPlan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
   const isFreeCode = !!(form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim()));
   const chosenPaymentLink = form.paymentProvider === "stripe" ? selectedPlan?.stripeLink : form.paymentProvider === "paypal" ? selectedPlan?.paypalLink : null;
