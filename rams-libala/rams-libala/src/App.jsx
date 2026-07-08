@@ -159,44 +159,27 @@ function computeScore(a, b) {
   return Math.round((score / max) * 100);
 }
 
-// ---------- Storage helpers ----------
 // ---------- Firebase Configuration ----------
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc } from "firebase/firestore";
+
 const firebaseConfig = {
-  apiKey: "AIzaSyAz1kVmRcWBMyEttlu9zHsFol2vJBdMd2m22u",
+  apiKey: "AIzaSyAz1kvmRcWbMYettLu9ZHsfOL2vjBDM2us",
   authDomain: "agence-matrimoniale-c513f.firebaseapp.com",
   projectId: "agence-matrimoniale-c513f",
   storageBucket: "agence-matrimoniale-c513f.firebasestorage.app",
-  messagingSenderId: "399149047073",
-  appId: "1:399149047073:web:adf478b57d39d3ddb33b40"
+  messagingSenderId: "39914907073",
+  appId: "1:39914907073:web:adf478b57d39d3ddb33b40"
 };
 
-// Initialize Firebase
-let db = null;
-async function initFirebase() {
-  if (db) return db;
-  try {
-    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const { getFirestore, doc, getDoc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    return db;
-  } catch (e) {
-    console.error("Firebase init error:", e);
-    return null;
-  }
-}
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
+// ---------- Firestore helpers (un document par profil / par match) ----------
 async function loadProfiles() {
   try {
-    const { getFirestore, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const apps = getApps();
-    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    const docRef = doc(firestore, "data", "profiles");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) return docSnap.data().list || [];
-    return [];
+    const snap = await getDocs(collection(db, "profiles"));
+    return snap.docs.map(d => d.data());
   } catch (e) {
     console.error("loadProfiles error:", e);
     return [];
@@ -205,28 +188,24 @@ async function loadProfiles() {
 
 async function saveProfiles(profiles) {
   try {
-    const { getFirestore, doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const apps = getApps();
-    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    await setDoc(doc(firestore, "data", "profiles"), { list: profiles });
+    await Promise.all(profiles.map(p => setDoc(doc(db, "profiles", p.id), p)));
   } catch (e) {
     console.error("saveProfiles error:", e);
   }
 }
 
+async function deleteProfileDoc(id) {
+  try {
+    await deleteDoc(doc(db, "profiles", id));
+  } catch (e) {
+    console.error("deleteProfile error:", e);
+  }
+}
+
 async function loadMatches() {
   try {
-    const { getFirestore, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const apps = getApps();
-    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    const docRef = doc(firestore, "data", "matches");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) return docSnap.data().list || [];
-    return [];
+    const snap = await getDocs(collection(db, "matches"));
+    return snap.docs.map(d => d.data());
   } catch (e) {
     console.error("loadMatches error:", e);
     return [];
@@ -235,17 +214,11 @@ async function loadMatches() {
 
 async function saveMatches(matches) {
   try {
-    const { getFirestore, doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const apps = getApps();
-    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    await setDoc(doc(firestore, "data", "matches"), { list: matches });
+    await Promise.all(matches.map(m => setDoc(doc(db, "matches", m.id), m)));
   } catch (e) {
     console.error("saveMatches error:", e);
   }
 }
-
 // ---------- UI Primitives ----------
 function Field({ label, children, hint }) {
   return (
