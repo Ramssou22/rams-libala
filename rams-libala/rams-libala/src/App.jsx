@@ -1054,7 +1054,19 @@ function ProfileCard({ profile, onClose }) {
                 }}>VIP</span>
               )}
             </div>
-            <p style={{ color: COLORS.inkSoft, fontSize: 14, margin: "4px 0 0" }}>{profile.city} · {profile.profession || "-"}</p>
+            <p style={{ color: COLORS.inkSoft, fontSize: 14, margin: "4px 0 0" }}>{profile.city} · {profile.profession || "-"}
+            </p>
+            {profile.photo && (
+  <a
+    href={profile.photo}
+    download={`${profile.firstName || "profil"}-photo.jpg`}
+    target="_blank"
+    rel="noreferrer"
+    style={{ fontSize: 12.5, color: COLORS.bordeaux, textDecoration: "underline", display: "inline-block", marginTop: 6 }}
+  >
+    Voir / télécharger la photo en grand
+  </a>
+)}
           </div>
         </div>
         {profile.isVip && (
