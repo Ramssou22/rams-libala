@@ -27,15 +27,14 @@ const SITUATIONS = ["Célibataire", "Divorcé(e)", "Veuf/Veuve"];
 
 const ZONES = ["France", "Europe", "Afrique", "Amerique", "Peu importe"];
 
-const PAYS_EUROPE = [
+const TOUS_LES_PAYS = [
+  // Europe
   "Allemagne", "Autriche", "Belgique", "Bulgarie", "Chypre", "Croatie", "Danemark",
   "Espagne", "Estonie", "Finlande", "France", "Grece", "Hongrie", "Irlande", "Italie",
   "Lettonie", "Lituanie", "Luxembourg", "Malte", "Pays-Bas", "Pologne", "Portugal",
   "Republique tcheque", "Roumanie", "Slovaquie", "Slovenie", "Suede",
-  "Suisse", "Royaume-Uni", "Norvege", "Serbie", "Ukraine", "Autre pays Europe"
-];
-
-const PAYS_AFRIQUE = [
+  "Suisse", "Royaume-Uni", "Norvege", "Serbie", "Ukraine",
+  // Afrique
   "Algerie", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cameroun",
   "Cap-Vert", "Centrafrique", "Comores", "Congo Brazzaville", "Congo RDC", "Cote d Ivoire",
   "Djibouti", "Egypte", "Erythree", "Ethiopie", "Gabon", "Gambie", "Ghana", "Guinee",
@@ -43,15 +42,20 @@ const PAYS_AFRIQUE = [
   "Madagascar", "Malawi", "Mali", "Maroc", "Maurice", "Mauritanie", "Mozambique",
   "Namibie", "Niger", "Nigeria", "Ouganda", "Rwanda", "Sao Tome-et-Principe",
   "Senegal", "Sierra Leone", "Somalie", "Soudan", "Soudan du Sud", "Swaziland",
-  "Tanzanie", "Tchad", "Togo", "Tunisie", "Zambie", "Zimbabwe", "Autre pays Afrique"
-];
-
-const PAYS_AMERIQUE = [
+  "Tanzanie", "Tchad", "Togo", "Tunisie", "Zambie", "Zimbabwe",
+  // Amerique
   "Canada", "Etats-Unis", "Mexique", "Guatemala", "Cuba", "Haiti", "Jamaique",
   "Republique dominicaine", "Trinidad-et-Tobago", "Colombie", "Venezuela", "Guyana",
   "Suriname", "Bresil", "Perou", "Bolivie", "Equateur", "Chili", "Argentine",
   "Uruguay", "Paraguay", "Martinique", "Guadeloupe", "Guyane francaise",
-  "Autre pays Amerique"
+  // Asie
+  "Chine", "Japon", "Coree du Sud", "Inde", "Pakistan", "Bangladesh", "Vietnam",
+  "Thailande", "Philippines", "Indonesie", "Malaisie", "Singapour", "Turquie",
+  "Liban", "Syrie", "Jordanie", "Arabie Saoudite", "Emirats Arabes Unis", "Israel",
+  // Oceanie
+  "Australie", "Nouvelle-Zelande",
+  // Autre
+  "Autre"
 ];
 
 const AGENCY_NAME = "RAM'S Libala";
@@ -156,30 +160,58 @@ function computeScore(a, b) {
   const denom = Math.max(aInt.size, bInt.size, 1);
   score += Math.round((shared / denom) * 20);
 
+  // Nationality match (weight 15) — si l'un cherche une nationalité précise
+  max += 15;
+  const aNats = new Set(a.nationalities || []);
+  const bNats = new Set(b.nationalities || []);
+  const aLooking = a.lookingForNationalities || [];
+  const bLooking = b.lookingForNationalities || [];
+  const aWantsMatch = aLooking.length === 0 || [...aNats].some(n => aLooking.includes(n)) || bLooking.length === 0;
+  const bWantsMatch = bLooking.length === 0 || [...bNats].some(n => bLooking.includes(n)) || aLooking.length === 0;
+  if (aWantsMatch && bWantsMatch) score += 15;
+  else if (aWantsMatch || bWantsMatch) score += 5;
+
   return Math.round((score / max) * 100);
 }
 
+// ---------- Storage helpers ----------
 // ---------- Firebase Configuration ----------
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc } from "firebase/firestore";
-
 const firebaseConfig = {
-  apiKey: "AIzaSyAz1kvmRcWbMYettLu9ZHsfOL2vjBDM2us",
+  apiKey: "AIzaSyAz1kVmRcWBMyEttlu9zHsFol2vJBdMd2m22u",
   authDomain: "agence-matrimoniale-c513f.firebaseapp.com",
   projectId: "agence-matrimoniale-c513f",
   storageBucket: "agence-matrimoniale-c513f.firebasestorage.app",
-  messagingSenderId: "39914907073",
-  appId: "1:39914907073:web:adf478b57d39d3ddb33b40"
+  messagingSenderId: "399149047073",
+  appId: "1:399149047073:web:adf478b57d39d3ddb33b40"
 };
 
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// Initialize Firebase
+let db = null;
+async function initFirebase() {
+  if (db) return db;
+  try {
+    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
+    const { getFirestore, doc, getDoc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    return db;
+  } catch (e) {
+    console.error("Firebase init error:", e);
+    return null;
+  }
+}
 
-// ---------- Firestore helpers (un document par profil / par match) ----------
 async function loadProfiles() {
   try {
-    const snap = await getDocs(collection(db, "profiles"));
-    return snap.docs.map(d => d.data());
+    const { getFirestore, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
+    const apps = getApps();
+    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
+    const firestore = getFirestore(app);
+    const docRef = doc(firestore, "data", "profiles");
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) return docSnap.data().list || [];
+    return [];
   } catch (e) {
     console.error("loadProfiles error:", e);
     return [];
@@ -188,24 +220,28 @@ async function loadProfiles() {
 
 async function saveProfiles(profiles) {
   try {
-    await Promise.all(profiles.map(p => setDoc(doc(db, "profiles", p.id), p)));
+    const { getFirestore, doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
+    const apps = getApps();
+    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
+    const firestore = getFirestore(app);
+    await setDoc(doc(firestore, "data", "profiles"), { list: profiles });
   } catch (e) {
     console.error("saveProfiles error:", e);
   }
 }
 
-async function deleteProfileDoc(id) {
-  try {
-    await deleteDoc(doc(db, "profiles", id));
-  } catch (e) {
-    console.error("deleteProfile error:", e);
-  }
-}
-
 async function loadMatches() {
   try {
-    const snap = await getDocs(collection(db, "matches"));
-    return snap.docs.map(d => d.data());
+    const { getFirestore, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
+    const apps = getApps();
+    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
+    const firestore = getFirestore(app);
+    const docRef = doc(firestore, "data", "matches");
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) return docSnap.data().list || [];
+    return [];
   } catch (e) {
     console.error("loadMatches error:", e);
     return [];
@@ -214,11 +250,17 @@ async function loadMatches() {
 
 async function saveMatches(matches) {
   try {
-    await Promise.all(matches.map(m => setDoc(doc(db, "matches", m.id), m)));
+    const { getFirestore, doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
+    const apps = getApps();
+    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
+    const firestore = getFirestore(app);
+    await setDoc(doc(firestore, "data", "matches"), { list: matches });
   } catch (e) {
     console.error("saveMatches error:", e);
   }
 }
+
 // ---------- UI Primitives ----------
 function Field({ label, children, hint }) {
   return (
@@ -348,18 +390,67 @@ function Avatar({ photo, name, size = 48 }) {
 }
 
 // ---------- Registration Form ----------
+// ---------- NationalityPicker ----------
+function NationalityPicker({ selected, onToggle, pays, placeholder }) {
+  const [search, setSearch] = useState("");
+  const filtered = pays.filter(p => p.toLowerCase().includes(search.toLowerCase()));
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div style={{ marginBottom: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {selected.map(s => (
+            <span key={s} onClick={() => onToggle(s)} style={{
+              background: COLORS.bordeaux, color: "#fff", fontSize: 12, padding: "4px 10px",
+              borderRadius: 20, cursor: "pointer", display: "flex", alignItems: "center", gap: 4
+            }}>
+              {s} <span style={{ fontSize: 14, lineHeight: 1 }}>×</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {selected.length === 0 && placeholder && (
+        <p style={{ fontSize: 12, color: COLORS.inkSoft, marginBottom: 8 }}>{placeholder}</p>
+      )}
+      <TextInput
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Rechercher un pays..."
+        style={{ marginBottom: 8 }}
+      />
+      {search.length > 0 && (
+        <div style={{ maxHeight: 180, overflowY: "auto", border: `1px solid ${COLORS.creamDark}`, borderRadius: 8, background: "#fff" }}>
+          {filtered.length === 0 ? (
+            <p style={{ padding: "10px 14px", fontSize: 13, color: COLORS.inkSoft }}>Aucun pays trouvé</p>
+          ) : filtered.map(p => (
+            <div key={p} onClick={() => { onToggle(p); setSearch(""); }} style={{
+              padding: "9px 14px", fontSize: 13.5, cursor: "pointer", color: COLORS.ink,
+              background: selected.includes(p) ? COLORS.cream : "#fff",
+              borderBottom: `1px solid ${COLORS.cream}`,
+              display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              {p}
+              {selected.includes(p) && <span style={{ color: COLORS.bordeaux, fontSize: 16 }}>✓</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const [form, setForm] = useState({
-    firstName: "", age: "", gender: "", city: "", country: "", email: "", phone: "", nationality: "", situation: "", hasChildren: "", numberOfChildren: "", childrenAges: "", wantsChildren: "",
-    religion: "", profession: "", educationLevel: "", smoker: "", lifestyle: "", housingStatus: "", availability: "", morphology: "", lookingForMorphology: "",
+    firstName: "", age: "", gender: "", city: "", country: "", email: "", phone: "", nationalities: [], situation: "", hasChildren: "", numberOfChildren: "", childrenAges: "", wantsChildren: "",
+    religion: "", profession: "", educationLevel: "", smoker: "", lifestyle: "", housingStatus: "", availability: "", morphology: "", lookingForMorphology: "", lookingForNationalities: [],
     interests: [], lookingForGender: "", ageMin: "", ageMax: "",
     height: "", lookingForHeightMin: "", lookingForHeightMax: "", acceptedZones: [],
     dealbreakers: "", selfDescription: "", whyAgency: "",
-    about: "", photo: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "",
+    about: "", photo: null, photoFull: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "",
     selectedCountries: [],
   });
   const [step, setStep] = useState(0);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoFullPreview, setPhotoFullPreview] = useState(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const toggleInterest = (i) => setForm(f => ({
@@ -371,29 +462,29 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const toggleCountry = (c) => setForm(f => ({
     ...f, selectedCountries: f.selectedCountries.includes(c) ? f.selectedCountries.filter(x => x !== c) : [...f.selectedCountries, c]
   }));
+  const toggleNationality = (n) => setForm(f => ({
+    ...f, nationalities: f.nationalities.includes(n) ? f.nationalities.filter(x => x !== n) : [...f.nationalities, n]
+  }));
+  const toggleLookingForNationality = (n) => setForm(f => ({
+    ...f, lookingForNationalities: f.lookingForNationalities.includes(n) ? f.lookingForNationalities.filter(x => x !== n) : [...f.lookingForNationalities, n]
+  }));
 
   const handlePhoto = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const maxWidth = 700;
-        const scale = Math.min(1, maxWidth / img.width);
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressed = canvas.toDataURL("image/jpeg", 0.7);
-        setPhotoPreview(compressed);
-        set("photo", compressed);
-      };
-      img.src = reader.result;
-    };
+    reader.onload = () => { setPhotoPreview(reader.result); set("photo", reader.result); };
     reader.readAsDataURL(file);
   };
+
+  const handlePhotoFull = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { setPhotoFullPreview(reader.result); set("photoFull", reader.result); };
+    reader.readAsDataURL(file);
+  };
+
   const selectedPlan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
   const isFreeCode = !!(form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim()));
   const chosenPaymentLink = form.paymentProvider === "stripe" ? selectedPlan?.stripeLink : form.paymentProvider === "paypal" ? selectedPlan?.paypalLink : null;
@@ -417,7 +508,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   ];
 
   const canNext = () => {
-    if (step === 0) return form.firstName && form.age && form.gender && form.photo && form.profession && form.height && form.email && form.phone && form.morphology;
+    if (step === 0) return form.firstName && form.age && form.gender && form.photo && form.photoFull && form.profession && form.height && form.email && form.phone && form.morphology;
     if (step === 1) return form.city && form.country && form.situation && form.hasChildren && form.wantsChildren;
     if (step === 2) return true; // personnalité facultative
     if (step === 3) return form.interests.length > 0;
@@ -507,18 +598,43 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           <Field label="Votre morphologie *" hint="Comment decririez-vous votre silhouette ?">
             <Select value={form.morphology} onChange={e => set("morphology", e.target.value)} placeholder="Choisir" options={["Mince", "Svelte / athletique", "Sportif(ve)", "Corpulent(e) / rond(e)", "En surpoids", "Peu importe"]} />
           </Field>
-          <Field label="Votre photo *" hint="Visible uniquement par l agence, puis par votre futur match valide">
+          <Field label="Votre photo de profil (visage) *" hint="Visible uniquement par l agence, puis par votre futur match valide">
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar photo={photoPreview} name={form.firstName} size={64} />
               <label style={{
                 padding: "10px 18px", borderRadius: 8,
-                border: `1.5px dashed ${COLORS.gold}`,
+                border: `1.5px dashed ${!form.photo ? "#A33" : COLORS.gold}`,
                 color: COLORS.bordeaux, fontSize: 14, fontWeight: 600, cursor: "pointer"
               }}>
-                Choisir une photo
+                Choisir une photo de visage
                 <input type="file" accept="image/*" onChange={handlePhoto} style={{ display: "none" }} />
               </label>
             </div>
+            {!form.photo && (
+              <span style={{ display: "block", fontSize: 12.5, color: "#A33", marginTop: 8 }}>
+                Une photo de visage est obligatoire.
+              </span>
+            )}
+          </Field>
+
+          <Field label="Votre photo en pied (corps entier) *" hint="Permet une meilleure mise en relation">
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <Avatar photo={photoFullPreview} name={form.firstName} size={64} />
+              <label style={{
+                padding: "10px 18px", borderRadius: 8,
+                border: `1.5px dashed ${!form.photoFull ? "#A33" : COLORS.gold}`,
+                color: COLORS.bordeaux, fontSize: 14, fontWeight: 600, cursor: "pointer"
+              }}>
+                Choisir une photo en pied
+                <input type="file" accept="image/*" onChange={handlePhotoFull} style={{ display: "none" }} />
+              </label>
+            </div>
+            {!form.photoFull && (
+              <span style={{ display: "block", fontSize: 12.5, color: "#A33", marginTop: 8 }}>
+                Une photo en pied est obligatoire.
+              </span>
+            )}
+          </Field>
           </Field>
         </>
       )}
@@ -533,8 +649,12 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
               <TextInput value={form.country} onChange={e => set("country", e.target.value)} placeholder="France" />
             </Field>
           </div>
-          <Field label="Nationalite">
-            <TextInput value={form.nationality} onChange={e => set("nationality", e.target.value)} placeholder="Ex : Francaise, Congolaise, Camerounaise..." />
+          <Field label="Votre nationalite" hint="Selectionnez une ou plusieurs nationalites">
+            <NationalityPicker
+              selected={form.nationalities}
+              onToggle={toggleNationality}
+              pays={TOUS_LES_PAYS}
+            />
           </Field>
           <Field label="Situation familiale">
             <Select value={form.situation} onChange={e => set("situation", e.target.value)} placeholder="Choisir" options={SITUATIONS} />
@@ -628,6 +748,14 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           </div>
           <Field label="Type physique recherche" hint="Facultatif">
             <Select value={form.lookingForMorphology} onChange={e => set("lookingForMorphology", e.target.value)} placeholder="Choisir" options={["Mince", "Svelte / athletique", "Sportif(ve)", "Corpulent(e) / rond(e)", "Peu importe"]} />
+          </Field>
+          <Field label="Nationalite recherchee" hint="Facultatif - laissez vide si peu importe">
+            <NationalityPicker
+              selected={form.lookingForNationalities}
+              onToggle={toggleLookingForNationality}
+              pays={TOUS_LES_PAYS}
+              placeholder="Toutes nationalites acceptees"
+            />
           </Field>
           <Field label="Zones geographiques acceptees" hint="Selectionnez les zones, puis les pays si vous le souhaitez">
             <div style={{ marginTop: 4 }}>
@@ -998,7 +1126,8 @@ function downloadProfileAsPdf(profile) {
         ${row("Genre", profile.gender)}
         ${row("Email", profile.email)}
         ${row("Telephone", profile.phone)}
-        ${row("Nationalite", profile.nationality)}
+        ${row("Nationalite", (profile.nationalities || []).join(", ") || profile.nationality || "")}
+        ${row("Nationalite recherchee", (profile.lookingForNationalities || []).length > 0 ? profile.lookingForNationalities.join(", ") : "Peu importe")}
         ${row("Ville / Pays", `${profile.city || ""}${profile.country ? " - " + profile.country : ""}`)}
         ${row("Situation", profile.situation)}
         ${row("A des enfants", profile.hasChildren === "Oui" ? `Oui (${profile.numberOfChildren || "?"}, âge${(profile.numberOfChildren || 0) > 1 ? "s" : ""} : ${profile.childrenAges || "non précisé"})` : profile.hasChildren)}
@@ -1041,7 +1170,14 @@ function ProfileCard({ profile, onClose }) {
         maxHeight: "85vh", overflowY: "auto"
       }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-          <Avatar photo={profile.photo} name={profile.firstName} size={72} />
+          <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+            <Avatar photo={profile.photo} name={profile.firstName} size={72} />
+            {profile.photoFull && (
+              <img src={profile.photoFull} alt="Photo en pied" style={{
+                width: 72, height: 96, objectFit: "cover", borderRadius: 8,
+                border: `2px solid ${COLORS.goldLight}`
+              }} />
+            )}
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <h3 style={{ fontFamily: "Playfair Display, serif", fontSize: 22, color: COLORS.bordeauxDark, margin: 0 }}>
@@ -1054,19 +1190,7 @@ function ProfileCard({ profile, onClose }) {
                 }}>VIP</span>
               )}
             </div>
-            <p style={{ color: COLORS.inkSoft, fontSize: 14, margin: "4px 0 0" }}>{profile.city} · {profile.profession || "-"}
-            </p>
-            {profile.photo && (
-  <a
-    href={profile.photo}
-    download={`${profile.firstName || "profil"}-photo.jpg`}
-    target="_blank"
-    rel="noreferrer"
-    style={{ fontSize: 12.5, color: COLORS.bordeaux, textDecoration: "underline", display: "inline-block", marginTop: 6 }}
-  >
-    Voir / télécharger la photo en grand
-  </a>
-)}
+            <p style={{ color: COLORS.inkSoft, fontSize: 14, margin: "4px 0 0" }}>{profile.city} · {profile.profession || "-"}</p>
           </div>
         </div>
         {profile.isVip && (
@@ -1078,7 +1202,9 @@ function ProfileCard({ profile, onClose }) {
           </div>
         )}
         <DetailRow icon={MapPin} label="Ville / Pays" value={`${profile.city || ""}${profile.country ? " - " + profile.country : ""}`} />
-        {profile.nationality && <DetailRow icon={User} label="Nationalite" value={profile.nationality} />}
+        {(profile.nationalities || []).length > 0 && <DetailRow icon={User} label="Nationalite" value={profile.nationalities.join(", ")} />}
+        {profile.nationality && !profile.nationalities && <DetailRow icon={User} label="Nationalite" value={profile.nationality} />}
+        {(profile.lookingForNationalities || []).length > 0 && <DetailRow icon={User} label="Nationalite recherchee" value={profile.lookingForNationalities.join(", ")} />}
         {profile.email && <DetailRow icon={User} label="Email" value={profile.email} />}
         {profile.phone && <DetailRow icon={User} label="Telephone" value={profile.phone} />}
         <DetailRow icon={MapPin} label="Situation" value={profile.situation} />
