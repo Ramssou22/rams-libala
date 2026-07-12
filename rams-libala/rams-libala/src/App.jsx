@@ -635,7 +635,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
               </span>
             )}
           </Field>
-          </Field>
+          
         </>
       )}
 
