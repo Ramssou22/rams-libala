@@ -1178,8 +1178,7 @@ function ProfileCard({ profile, onClose }) {
                 border: `2px solid ${COLORS.goldLight}`
               }} />
             )}
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+</div>            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <h3 style={{ fontFamily: "Playfair Display, serif", fontSize: 22, color: COLORS.bordeauxDark, margin: 0 }}>
                 {profile.firstName}, {profile.age} ans
               </h3>
