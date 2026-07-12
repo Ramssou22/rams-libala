@@ -598,7 +598,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           <Field label="Votre morphologie *" hint="Comment decririez-vous votre silhouette ?">
             <Select value={form.morphology} onChange={e => set("morphology", e.target.value)} placeholder="Choisir" options={["Mince", "Svelte / athletique", "Sportif(ve)", "Corpulent(e) / rond(e)", "En surpoids", "Peu importe"]} />
           </Field>
-          <Field label="Votre photo de profil (visage) *" hint="Visible uniquement par l agence, puis par votre futur match valide">
+          <Field label="Mettez une photo de profil *" hint="Visible uniquement par l agence, puis par votre futur match valide">
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar photo={photoPreview} name={form.firstName} size={64} />
               <label style={{
@@ -617,7 +617,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
             )}
           </Field>
 
-          <Field label="Votre photo en pied (corps entier) *" hint="Permet une meilleure mise en relation">
+          <Field label="Mettez une photo de vous entière *" hint="Permet une meilleure mise en relation">
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar photo={photoFullPreview} name={form.firstName} size={64} />
               <label style={{
