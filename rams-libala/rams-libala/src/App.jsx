@@ -1191,7 +1191,7 @@ function ProfileCard({ profile, onClose }) {
             </div>
             <p style={{ color: COLORS.inkSoft, fontSize: 14, margin: "4px 0 0" }}>{profile.city} · {profile.profession || "-"}</p>
           </div>
-        </div>
+        
         {profile.isVip && (
           <div style={{
             background: COLORS.goldLight + "33", border: `1px solid ${COLORS.goldLight}`, borderRadius: 10,
