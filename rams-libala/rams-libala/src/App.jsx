@@ -184,8 +184,20 @@ async function loadProfiles() {
 async function saveProfiles(profiles) {
   try {
     await Promise.all(profiles.map(p => setDoc(doc(db, "profiles", p.id), p)));
+    return true;
   } catch (e) {
     console.error("saveProfiles error:", e);
+    return false;
+  }
+}
+
+async function saveOneProfile(profile) {
+  try {
+    await setDoc(doc(db, "profiles", profile.id), profile);
+    return true;
+  } catch (e) {
+    console.error("saveOneProfile error:", e);
+    return false;
   }
 }
 
@@ -399,7 +411,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
     interests: [], lookingForGender: "", ageMin: "", ageMax: "",
     height: "", lookingForHeightMin: "", lookingForHeightMax: "", acceptedZones: [],
     dealbreakers: "", selfDescription: "", whyAgency: "",
-    about: "", photo: null, photoFull: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "",
+    about: "", photo: null, photoFull: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "", paymentSelfConfirmed: false,
     selectedCountries: [],
   });
   const [step, setStep] = useState(0);
@@ -428,14 +440,14 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        const maxWidth = 700;
+        const maxWidth = 480;
         const scale = Math.min(1, maxWidth / img.width);
         const canvas = document.createElement("canvas");
         canvas.width = img.width * scale;
         canvas.height = img.height * scale;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressed = canvas.toDataURL("image/jpeg", 0.7);
+        const compressed = canvas.toDataURL("image/jpeg", 0.5);
         setPhotoPreview(compressed);
         set("photo", compressed);
       };
@@ -451,14 +463,14 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
-        const maxWidth = 700;
+        const maxWidth = 480;
         const scale = Math.min(1, maxWidth / img.width);
         const canvas = document.createElement("canvas");
         canvas.width = img.width * scale;
         canvas.height = img.height * scale;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const compressed = canvas.toDataURL("image/jpeg", 0.7);
+        const compressed = canvas.toDataURL("image/jpeg", 0.5);
         setPhotoFullPreview(compressed);
         set("photoFull", compressed);
       };
@@ -491,7 +503,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const paymentSatisfied = () => {
     if (isFreeCode) return true;
     if (!form.paymentMethod) return false;
-    return !!(form.paymentReference && form.paymentReference.trim().length > 0);
+    return !!form.paymentSelfConfirmed;
   };
 
   const canNext = () => {
@@ -869,7 +881,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <button
                       type="button"
-                      onClick={() => { set("paymentMethod", "card"); set("paymentReference", ""); setPaymentConfirmed(false); }}
+                      onClick={() => { set("paymentMethod", "card"); set("paymentReference", ""); set("paymentSelfConfirmed", false); setPaymentConfirmed(false); }}
                       style={{
                         padding: "16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
                         border: `2px solid ${form.paymentMethod === "card" ? COLORS.bordeaux : COLORS.creamDark}`,
@@ -881,7 +893,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => { set("paymentMethod", "mobile_money"); set("paymentReference", ""); setPaymentConfirmed(false); }}
+                      onClick={() => { set("paymentMethod", "mobile_money"); set("paymentReference", ""); set("paymentSelfConfirmed", false); setPaymentConfirmed(false); }}
                       style={{
                         padding: "16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
                         border: `2px solid ${form.paymentMethod === "mobile_money" ? COLORS.bordeaux : COLORS.creamDark}`,
@@ -926,13 +938,18 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                     </div>
 
                     {form.paymentProvider && chosenPaymentLink && !paymentConfirmed && (
-                      <Button
-                        onClick={() => { window.open(chosenPaymentLink, "_blank"); setPaymentConfirmed(true); }}
-                        variant="gold"
-                        style={{ width: "100%", justifyContent: "center", marginBottom: 12 }}
-                      >
-                        Procéder au paiement ({selectedPlan?.price} €)
-                      </Button>
+                      <>
+                        <Button
+                          onClick={() => { window.open(chosenPaymentLink, "_blank"); setPaymentConfirmed(true); }}
+                          variant="gold"
+                          style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}
+                        >
+                          Procéder au paiement ({selectedPlan?.price} €)
+                        </Button>
+                        <p style={{ fontSize: 12.5, color: COLORS.inkSoft, marginBottom: 12 }}>
+                          Une nouvelle page va s'ouvrir pour entrer votre carte bancaire. Si rien ne s'ouvre, vérifiez que votre navigateur n'a pas bloqué la fenêtre (icône de blocage pop-up dans la barre d'adresse).
+                        </p>
+                      </>
                     )}
                     {form.paymentProvider && !chosenPaymentLink && (
                       <div style={{
@@ -943,14 +960,36 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                       </div>
                     )}
 
-                    {form.paymentProvider && chosenPaymentLink && (
-                      <Field label="Référence de paiement (obligatoire)" hint="Copiez le numéro de commande reçu par email après votre paiement (commence par cs_ pour Stripe)">
-                        <TextInput
-                          value={form.paymentReference || ""}
-                          onChange={e => set("paymentReference", e.target.value)}
-                          placeholder="cs_live_xxxxxxxxxxxx"
-                        />
-                      </Field>
+                    {form.paymentProvider && chosenPaymentLink && paymentConfirmed && (
+                      <>
+                        <div style={{
+                          background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 8,
+                          padding: "12px 14px", fontSize: 13, color: "#2D5C3F", marginBottom: 14
+                        }}>
+                          Une fois votre paiement terminé sur la page qui s'est ouverte, confirmez ci-dessous pour valider votre inscription.
+                        </div>
+                        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14, cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!form.paymentSelfConfirmed}
+                            onChange={e => set("paymentSelfConfirmed", e.target.checked)}
+                            style={{ marginTop: 3, width: 17, height: 17, cursor: "pointer", accentColor: COLORS.bordeaux }}
+                          />
+                          <span style={{ fontSize: 14, color: COLORS.ink }}>
+                            Je confirme avoir effectué le paiement de {selectedPlan?.price} €.
+                          </span>
+                        </label>
+                        <Field label="Référence de paiement" hint="Facultatif — si vous l'avez sous la main, ça aide l'agence à vérifier plus vite">
+                          <TextInput
+                            value={form.paymentReference || ""}
+                            onChange={e => set("paymentReference", e.target.value)}
+                            placeholder="cs_live_xxxxxxxxxxxx"
+                          />
+                        </Field>
+                        <Button variant="ghost" onClick={() => setPaymentConfirmed(false)} style={{ fontSize: 12.5, padding: "4px 0" }}>
+                          Rouvrir la page de paiement
+                        </Button>
+                      </>
                     )}
                   </div>
                 )}
@@ -961,9 +1000,20 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                       background: "#FBF6EA", border: `1px solid ${COLORS.goldLight}`, borderRadius: 8,
                       padding: "12px 14px", fontSize: 13, color: COLORS.bordeauxDark, marginBottom: 16
                     }}>
-                      Envoyez {selectedPlan?.price} € au numéro Mobile Money communiqué par l'agence, puis indiquez ci-dessous le numéro de transaction reçu par SMS.
+                      Envoyez {selectedPlan?.price} € au numéro Mobile Money communiqué par l'agence.
                     </div>
-                    <Field label="Numéro de transaction Mobile Money (obligatoire)" hint="Reçu par SMS après votre paiement">
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!form.paymentSelfConfirmed}
+                        onChange={e => set("paymentSelfConfirmed", e.target.checked)}
+                        style={{ marginTop: 3, width: 17, height: 17, cursor: "pointer", accentColor: COLORS.bordeaux }}
+                      />
+                      <span style={{ fontSize: 14, color: COLORS.ink }}>
+                        Je confirme avoir envoyé le paiement de {selectedPlan?.price} €.
+                      </span>
+                    </label>
+                    <Field label="Numéro de transaction Mobile Money" hint="Facultatif — reçu par SMS, si vous l'avez">
                       <TextInput
                         value={form.paymentReference || ""}
                         onChange={e => set("paymentReference", e.target.value)}
@@ -1612,10 +1662,13 @@ export default function App() {
   }, [profiles, loading]);
 
   const handleRegister = async (profile) => {
-    const updated = [...profiles, profile];
-    setProfiles(updated);
-    await saveProfiles(updated);
-    setView("confirmation");
+    const ok = await saveOneProfile(profile);
+    if (ok) {
+      setProfiles(p => [...p, profile]);
+      setView("confirmation");
+    } else {
+      setView("registration-error");
+    }
   };
 
   const handleAddProfileManually = async (profile) => {
@@ -1743,6 +1796,29 @@ export default function App() {
             L'agence va l'examiner avec discrétion. Vous serez contacté(e) personnellement si un profil correspond à vos critères. Votre photo et vos informations restent confidentielles jusqu'à validation.
           </p>
           <Button onClick={() => setView("home")} style={{ marginTop: 24 }}>Retour à l'accueil</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "registration-error") {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.cream, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {fontImports}
+        <div style={{ textAlign: "center", maxWidth: 420, padding: 20 }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: "50%", background: "#A33", margin: "0 auto 20px",
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}>
+            <X size={28} color="#fff" />
+          </div>
+          <h2 style={{ fontFamily: "Playfair Display, serif", fontSize: 26, color: COLORS.bordeauxDark }}>
+            Un problème technique est survenu
+          </h2>
+          <p style={{ color: COLORS.inkSoft, marginTop: 10, lineHeight: 1.6 }}>
+            Votre profil n'a pas pu être enregistré (probablement une photo trop volumineuse). Merci de réessayer avec des photos plus légères, ou de contacter directement l'agence pour finaliser votre inscription.
+          </p>
+          <Button onClick={() => setView("register")} style={{ marginTop: 24 }}>Réessayer</Button>
         </div>
       </div>
     );
