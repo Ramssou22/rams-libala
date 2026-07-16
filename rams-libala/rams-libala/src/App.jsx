@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Heart, Lock, User, Users, Sparkles, Check, X, MapPin, Calendar, Briefcase, ChevronRight, Eye, EyeOff, Plus, ArrowLeft } from "lucide-react";
+import { initializeApp, getApps } from "firebase/app";
+import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc } from "firebase/firestore";
 
 // ---------- Design tokens ----------
-// Palette: deep bordeaux + warm cream + soft gold, evokes a discreet, trusted personal service
-// Display face: Playfair Display (serif, elegant) / Body: Inter / Data: ui-monospace
-
 const COLORS = {
   bordeaux: "#5C1A2B",
   bordeauxDark: "#3D0F1C",
@@ -22,19 +21,15 @@ const INTERESTS = [
 ];
 
 const RELIGIONS = ["Christianisme", "Islam", "Judaïsme", "Hindouisme", "Bouddhisme", "Autre", "Sans religion", "Peu importe"];
-
 const SITUATIONS = ["Célibataire", "Divorcé(e)", "Veuf/Veuve"];
-
 const ZONES = ["France", "Europe", "Afrique", "Amerique", "Peu importe"];
 
 const TOUS_LES_PAYS = [
-  // Europe
   "Allemagne", "Autriche", "Belgique", "Bulgarie", "Chypre", "Croatie", "Danemark",
   "Espagne", "Estonie", "Finlande", "France", "Grece", "Hongrie", "Irlande", "Italie",
   "Lettonie", "Lituanie", "Luxembourg", "Malte", "Pays-Bas", "Pologne", "Portugal",
   "Republique tcheque", "Roumanie", "Slovaquie", "Slovenie", "Suede",
   "Suisse", "Royaume-Uni", "Norvege", "Serbie", "Ukraine",
-  // Afrique
   "Algerie", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cameroun",
   "Cap-Vert", "Centrafrique", "Comores", "Congo Brazzaville", "Congo RDC", "Cote d Ivoire",
   "Djibouti", "Egypte", "Erythree", "Ethiopie", "Gabon", "Gambie", "Ghana", "Guinee",
@@ -43,36 +38,29 @@ const TOUS_LES_PAYS = [
   "Namibie", "Niger", "Nigeria", "Ouganda", "Rwanda", "Sao Tome-et-Principe",
   "Senegal", "Sierra Leone", "Somalie", "Soudan", "Soudan du Sud", "Swaziland",
   "Tanzanie", "Tchad", "Togo", "Tunisie", "Zambie", "Zimbabwe",
-  // Amerique
   "Canada", "Etats-Unis", "Mexique", "Guatemala", "Cuba", "Haiti", "Jamaique",
   "Republique dominicaine", "Trinidad-et-Tobago", "Colombie", "Venezuela", "Guyana",
   "Suriname", "Bresil", "Perou", "Bolivie", "Equateur", "Chili", "Argentine",
   "Uruguay", "Paraguay", "Martinique", "Guadeloupe", "Guyane francaise",
-  // Asie
   "Chine", "Japon", "Coree du Sud", "Inde", "Pakistan", "Bangladesh", "Vietnam",
   "Thailande", "Philippines", "Indonesie", "Malaisie", "Singapour", "Turquie",
   "Liban", "Syrie", "Jordanie", "Arabie Saoudite", "Emirats Arabes Unis", "Israel",
-  // Oceanie
   "Australie", "Nouvelle-Zelande",
-  // Autre
   "Autre"
 ];
 
 const AGENCY_NAME = "RAM'S Libala";
-
-// Codes promo donnant un accès gratuit (modifiable ici)
 const FREE_ACCESS_CODES = ["RAMSLIBALA-OFFERT", "BIENVENUE2026"];
 
-// Modifiable ici : durée en mois -> prix en euros, profils garantis, et type de formule
 const SUBSCRIPTION_PLANS = [
-  { id: "standard-3", months: 3, price: 49, profiles: "2 à 3 profils proposés", stripeLink: "https://buy.stripe.com/aFacN794cb2idTI34w1ZS02" },
-  { id: "standard-6", months: 6, price: 99, profiles: "5 à 6 profils proposés", stripeLink: "https://buy.stripe.com/fZu4gBgwEeeu6rg20s1ZS03" },
-  { id: "standard-12", months: 12, price: 160, profiles: "9 à 11 profils proposés", stripeLink: "https://buy.stripe.com/7sY6oJ3JSc6m4j8dJa1ZS05" },
+  { id: "decouverte-3", months: 3, price: 49, label: "Découverte", profiles: "2 à 3 profils proposés", stripeLink: "https://buy.stripe.com/aFacN794cb2idTI34w1ZS02" },
+  { id: "standard-6", months: 6, price: 99, label: "Standard", profiles: "5 à 6 profils proposés", stripeLink: "https://buy.stripe.com/fZu4gBgwEeeu6rg20s1ZS03" },
+  { id: "standard-12", months: 12, price: 160, label: "Premium", profiles: "9 à 11 profils proposés", stripeLink: "https://buy.stripe.com/7sY6oJ3JSc6m4j8dJa1ZS05" },
   {
-    id: "vip-3", months: 3, price: 250, vip: true,
+    id: "vip-3", months: 3, price: 250, vip: true, label: "VIP",
     profiles: "2 à 4 mises en relation",
     stripeLink: "https://buy.stripe.com/9B67sNfsA9Ye16W6gI1ZS06",
-    description: "Entretien personnalise en presentiel avec l agence (France uniquement) + organisation logistique des premiers rendez-vous de mise en relation",
+    description: "Entretien personnalisé en présentiel avec l'agence (France uniquement) + organisation logistique des 2 premiers rendez-vous de mise en relation (l'agence choisit le lieu et l'horaire ; les deux personnes se rencontrent seules)",
   },
 ];
 
@@ -103,14 +91,12 @@ function computeScore(a, b) {
   if (a.lookingForGender && b.gender && a.lookingForGender !== "Peu importe" && a.lookingForGender !== b.gender) return 0;
   if (b.lookingForGender && a.gender && b.lookingForGender !== "Peu importe" && b.lookingForGender !== a.gender) return 0;
 
-  // Filtre dur situation administrative
   if (a.adminAcceptIrregular === "Non" && b.adminSituation === "Irreguliere") return 0;
   if (b.adminAcceptIrregular === "Non" && a.adminSituation === "Irreguliere") return 0;
 
   let score = 0;
   let max = 0;
 
-  // Age range fit (weight 18)
   max += 18;
   const aAge = Number(a.age), bAge = Number(b.age);
   const aWantsMin = Number(a.ageMin) || 0, aWantsMax = Number(a.ageMax) || 200;
@@ -120,25 +106,21 @@ function computeScore(a, b) {
   if (aFits && bFits) score += 18;
   else if (aFits || bFits) score += 7;
 
-  // Location (weight 10)
   max += 10;
   if (a.city && b.city && a.city.trim().toLowerCase() === b.city.trim().toLowerCase()) score += 10;
 
-  // Wants children alignment (weight 17)
   max += 17;
   if (a.wantsChildren && b.wantsChildren) {
     if (a.wantsChildren === b.wantsChildren) score += 17;
     else if (a.wantsChildren === "Peu importe" || b.wantsChildren === "Peu importe") score += 10;
   }
 
-  // Religion (weight 13)
   max += 13;
   if (a.religion && b.religion) {
     if (a.religion === b.religion) score += 13;
     else if (a.religion === "Peu importe" || b.religion === "Peu importe") score += 7;
   }
 
-  // Height preference fit (weight 12)
   max += 12;
   const bHeight = Number(b.height), aHeight = Number(a.height);
   const aHMin = Number(a.lookingForHeightMin) || 0, aHMax = Number(a.lookingForHeightMax) || 999;
@@ -148,7 +130,6 @@ function computeScore(a, b) {
   if (aHeightFits && bHeightFits) score += 12;
   else if (aHeightFits || bHeightFits) score += 5;
 
-  // Accepted geographic zone overlap (weight 10)
   max += 10;
   const aZones = new Set(a.acceptedZones || []);
   const bZones = new Set(b.acceptedZones || []);
@@ -157,7 +138,6 @@ function computeScore(a, b) {
     || [...aZones].some(z => bZones.has(z));
   if (zonesOverlap) score += 10;
 
-  // Shared interests (weight 20)
   max += 20;
   const aInt = new Set(a.interests || []);
   const bInt = new Set(b.interests || []);
@@ -165,7 +145,6 @@ function computeScore(a, b) {
   const denom = Math.max(aInt.size, bInt.size, 1);
   score += Math.round((shared / denom) * 20);
 
-  // Nationality match (weight 15) — si l'un cherche une nationalité précise
   max += 15;
   const aNats = new Set(a.nationalities || []);
   const bNats = new Set(b.nationalities || []);
@@ -179,44 +158,24 @@ function computeScore(a, b) {
   return Math.round((score / max) * 100);
 }
 
-// ---------- Storage helpers ----------
 // ---------- Firebase Configuration ----------
 const firebaseConfig = {
-  apiKey: "AIzaSyAz1kVmRcWBMyEttlu9zHsFol2vJBdMd2m22u",
+  apiKey: "AIzaSyAz1kvmRcWbMYettLu9ZHsfOL2vjBDM2us",
   authDomain: "agence-matrimoniale-c513f.firebaseapp.com",
   projectId: "agence-matrimoniale-c513f",
   storageBucket: "agence-matrimoniale-c513f.firebasestorage.app",
-  messagingSenderId: "399149047073",
-  appId: "1:399149047073:web:adf478b57d39d3ddb33b40"
+  messagingSenderId: "39914907073",
+  appId: "1:39914907073:web:adf478b57d39d3ddb33b40"
 };
 
-// Initialize Firebase
-let db = null;
-async function initFirebase() {
-  if (db) return db;
-  try {
-    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const { getFirestore, doc, getDoc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    return db;
-  } catch (e) {
-    console.error("Firebase init error:", e);
-    return null;
-  }
-}
+const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
+// ---------- Firestore helpers (un document par profil / par match) ----------
 async function loadProfiles() {
   try {
-    const { getFirestore, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const apps = getApps();
-    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    const docRef = doc(firestore, "data", "profiles");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) return docSnap.data().list || [];
-    return [];
+    const snap = await getDocs(collection(db, "profiles"));
+    return snap.docs.map(d => d.data());
   } catch (e) {
     console.error("loadProfiles error:", e);
     return [];
@@ -225,28 +184,36 @@ async function loadProfiles() {
 
 async function saveProfiles(profiles) {
   try {
-    const { getFirestore, doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const apps = getApps();
-    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    await setDoc(doc(firestore, "data", "profiles"), { list: profiles });
+    await Promise.all(profiles.map(p => setDoc(doc(db, "profiles", p.id), p)));
+    return true;
   } catch (e) {
     console.error("saveProfiles error:", e);
+    return false;
+  }
+}
+
+async function saveOneProfile(profile) {
+  try {
+    await setDoc(doc(db, "profiles", profile.id), profile);
+    return true;
+  } catch (e) {
+    console.error("saveOneProfile error:", e);
+    return false;
+  }
+}
+
+async function deleteProfileDoc(id) {
+  try {
+    await deleteDoc(doc(db, "profiles", id));
+  } catch (e) {
+    console.error("deleteProfile error:", e);
   }
 }
 
 async function loadMatches() {
   try {
-    const { getFirestore, doc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const apps = getApps();
-    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    const docRef = doc(firestore, "data", "matches");
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) return docSnap.data().list || [];
-    return [];
+    const snap = await getDocs(collection(db, "matches"));
+    return snap.docs.map(d => d.data());
   } catch (e) {
     console.error("loadMatches error:", e);
     return [];
@@ -255,12 +222,7 @@ async function loadMatches() {
 
 async function saveMatches(matches) {
   try {
-    const { getFirestore, doc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
-    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js");
-    const apps = getApps();
-    const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
-    const firestore = getFirestore(app);
-    await setDoc(doc(firestore, "data", "matches"), { list: matches });
+    await Promise.all(matches.map(m => setDoc(doc(db, "matches", m.id), m)));
   } catch (e) {
     console.error("saveMatches error:", e);
   }
@@ -394,122 +356,6 @@ function Avatar({ photo, name, size = 48 }) {
   );
 }
 
-// ---------- Registration Form ----------
-// ---------- Stripe Payment Form ----------
-const STRIPE_PK = "pk_live_51S5oZ7QuMke6kIqyLwuqznZnazBkh7oZMg7R4qzp6lgyL4ZFJdSlrghocwKfkxtb1IeV55Yb4ZlmFqe6FKlqxZmk00eUFP3JiB";
-
-function StripePaymentForm({ plan, onPaymentSuccess, paymentDone }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [stripeReady, setStripeReady] = useState(false);
-  const cardRef = React.useRef(null);
-  const stripeRef = React.useRef(null);
-  const cardElementRef = React.useRef(null);
-
-  React.useEffect(() => {
-    if (!plan || paymentDone) return;
-    const script = document.createElement("script");
-    script.src = "https://js.stripe.com/v3/";
-    script.onload = () => {
-      stripeRef.current = window.Stripe(STRIPE_PK);
-      const elements = stripeRef.current.elements();
-      cardElementRef.current = elements.create("card", {
-        style: {
-          base: {
-            fontSize: "15px", color: "#2A2422", fontFamily: "Inter, sans-serif",
-            "::placeholder": { color: "#9B8F8A" }
-          }
-        },
-        hidePostalCode: true
-      });
-      if (cardRef.current) {
-        cardElementRef.current.mount(cardRef.current);
-        setStripeReady(true);
-      }
-    };
-    document.head.appendChild(script);
-    return () => { if (cardElementRef.current) cardElementRef.current.destroy(); };
-  }, [plan, paymentDone]);
-
-  const handlePay = async () => {
-    if (!stripeRef.current || !cardElementRef.current || !plan) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("https://api.stripe.com/v1/payment_intents", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${STRIPE_PK}`,
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: `amount=${plan.price * 100}&currency=eur&payment_method_types[]=card`
-      });
-      const pi = await res.json();
-      if (!pi.client_secret) throw new Error("Impossible de creer le paiement.");
-      const result = await stripeRef.current.confirmCardPayment(pi.client_secret, {
-        payment_method: { card: cardElementRef.current }
-      });
-      if (result.error) {
-        setError(result.error.message);
-      } else if (result.paymentIntent.status === "succeeded") {
-        onPaymentSuccess();
-      }
-    } catch (e) {
-      setError("Une erreur est survenue. Verifiez vos informations de carte.");
-    }
-    setLoading(false);
-  };
-
-  if (paymentDone) {
-    return (
-      <div style={{ background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 10, padding: "16px", marginTop: 16 }}>
-        <span style={{ color: "#2D5C3F", fontWeight: 600, fontSize: 14 }}>
-          Paiement confirme ! Vous pouvez valider votre inscription.
-        </span>
-      </div>
-    );
-  }
-
-  if (!plan) return null;
-
-  return (
-    <div style={{ marginTop: 16 }}>
-      <div style={{ background: COLORS.cream, borderRadius: 10, padding: 16, border: `1px solid ${COLORS.creamDark}` }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>
-          Paiement securise par carte bancaire
-        </div>
-        <div style={{ fontSize: 14, color: COLORS.ink, marginBottom: 14 }}>
-          Formule : <strong>{plan.vip ? "VIP " : ""}{plan.months} mois</strong> — <strong>{plan.price} €</strong>
-        </div>
-        {!stripeReady && (
-          <div style={{ color: COLORS.inkSoft, fontSize: 13, marginBottom: 10 }}>Chargement du formulaire de paiement...</div>
-        )}
-        <div
-          ref={cardRef}
-          style={{
-            padding: "14px", background: "#fff", borderRadius: 8,
-            border: `1.5px solid ${COLORS.creamDark}`, minHeight: 44,
-            display: stripeReady ? "block" : "none"
-          }}
-        />
-        {error && (
-          <div style={{ color: "#A33", fontSize: 13, marginTop: 10 }}>{error}</div>
-        )}
-        {stripeReady && (
-          <Button
-            onClick={handlePay}
-            disabled={loading}
-            variant="gold"
-            style={{ marginTop: 14, width: "100%", justifyContent: "center" }}
-          >
-            {loading ? "Paiement en cours..." : `Payer ${plan.price} € maintenant`}
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ---------- NationalityPicker ----------
 function NationalityPicker({ selected, onToggle, pays, placeholder }) {
   const [search, setSearch] = useState("");
@@ -558,6 +404,7 @@ function NationalityPicker({ selected, onToggle, pays, placeholder }) {
   );
 }
 
+// ---------- Registration Form ----------
 function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const [form, setForm] = useState({
     firstName: "", age: "", gender: "", city: "", country: "", email: "", phone: "", nationalities: [], situation: "", hasChildren: "", numberOfChildren: "", childrenAges: "", wantsChildren: "",
@@ -565,12 +412,13 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
     interests: [], lookingForGender: "", ageMin: "", ageMax: "",
     height: "", lookingForHeightMin: "", lookingForHeightMax: "", acceptedZones: [],
     dealbreakers: "", selfDescription: "", whyAgency: "",
-    about: "", photo: null, photoFull: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "", paymentDone: false,
+    about: "", photo: null, photoFull: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "", paymentSelfConfirmed: false,
     selectedCountries: [],
   });
   const [step, setStep] = useState(0);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [photoFullPreview, setPhotoFullPreview] = useState(null);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const toggleInterest = (i) => setForm(f => ({
@@ -578,9 +426,6 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   }));
   const toggleZone = (z) => setForm(f => ({
     ...f, acceptedZones: f.acceptedZones.includes(z) ? f.acceptedZones.filter(x => x !== z) : [...f.acceptedZones, z]
-  }));
-  const toggleCountry = (c) => setForm(f => ({
-    ...f, selectedCountries: f.selectedCountries.includes(c) ? f.selectedCountries.filter(x => x !== c) : [...f.selectedCountries, c]
   }));
   const toggleNationality = (n) => setForm(f => ({
     ...f, nationalities: f.nationalities.includes(n) ? f.nationalities.filter(x => x !== n) : [...f.nationalities, n]
@@ -593,7 +438,22 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { setPhotoPreview(reader.result); set("photo", reader.result); };
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 480;
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.5);
+        setPhotoPreview(compressed);
+        set("photo", compressed);
+      };
+      img.src = reader.result;
+    };
     reader.readAsDataURL(file);
   };
 
@@ -601,40 +461,62 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { setPhotoFullPreview(reader.result); set("photoFull", reader.result); };
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxWidth = 480;
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.5);
+        setPhotoFullPreview(compressed);
+        set("photoFull", compressed);
+      };
+      img.src = reader.result;
+    };
     reader.readAsDataURL(file);
   };
 
   const selectedPlan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
   const isFreeCode = !!(form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim()));
   const chosenPaymentLink = form.paymentProvider === "stripe" ? selectedPlan?.stripeLink : form.paymentProvider === "paypal" ? selectedPlan?.paypalLink : null;
-  const needsRealPayment = !adminMode && !isFreeCode && form.paymentMethod === "card" && !!chosenPaymentLink;
-  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
   const steps = adminMode ? [
-    { title: "Vos informations", icon: User },
-    { title: "Vos critères de vie", icon: MapPin },
-    { title: "Votre personnalité", icon: Sparkles },
-    { title: "Vos centres d interet", icon: Heart },
-    { title: "Ce que vous recherchez", icon: Heart },
+    { key: "info", title: "Vos informations", icon: User },
+    { key: "criteria", title: "Vos critères de vie", icon: MapPin },
+    { key: "personality", title: "Votre personnalité", icon: Sparkles },
+    { key: "interests", title: "Vos centres d interet", icon: Heart },
+    { key: "lookingfor", title: "Ce que vous recherchez", icon: Heart },
   ] : [
-    { title: "Vos informations", icon: User },
-    { title: "Vos critères de vie", icon: MapPin },
-    { title: "Votre personnalité", icon: Sparkles },
-    { title: "Vos centres d interet", icon: Heart },
-    { title: "Ce que vous recherchez", icon: Heart },
-    { title: "Choisissez votre formule", icon: Lock },
-    { title: "Contrat et paiement", icon: Check },
+    { key: "plan", title: "Choisissez votre formule", icon: Lock },
+    { key: "payment", title: "Contrat et paiement", icon: Check },
+    { key: "info", title: "Vos informations", icon: User },
+    { key: "criteria", title: "Vos critères de vie", icon: MapPin },
+    { key: "personality", title: "Votre personnalité", icon: Sparkles },
+    { key: "interests", title: "Vos centres d interet", icon: Heart },
+    { key: "lookingfor", title: "Ce que vous recherchez", icon: Heart },
   ];
 
+  // Le paiement (ou un code promo valide) est obligatoire pour valider l'inscription
+  const paymentSatisfied = () => {
+    if (isFreeCode) return true;
+    if (!form.paymentMethod) return false;
+    return !!form.paymentSelfConfirmed;
+  };
+
+  const currentKey = steps[step].key;
+
   const canNext = () => {
-    if (step === 0) return form.firstName && form.age && form.gender && form.photo && form.photoFull && form.profession && form.height && form.email && form.phone && form.morphology;
-    if (step === 1) return form.city && form.country && form.situation && form.hasChildren && form.wantsChildren;
-    if (step === 2) return true; // personnalité facultative
-    if (step === 3) return form.interests.length > 0;
-    if (step === 4) return form.lookingForGender && form.ageMin && form.ageMax;
-    if (!adminMode && step === 5) return !!form.subscriptionPlanId;
-    if (!adminMode && step === 6) return !!form.contractAccepted && (form.paymentDone || (form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim())));
+    if (currentKey === "plan") return !!form.subscriptionPlanId;
+    if (currentKey === "payment") return !!form.contractAccepted && paymentSatisfied();
+    if (currentKey === "info") return form.firstName && form.age && form.gender && form.photo && form.photoFull && form.profession && form.height && form.email && form.phone && form.morphology;
+    if (currentKey === "criteria") return form.city && form.country && form.situation && form.hasChildren && form.wantsChildren;
+    if (currentKey === "personality") return true;
+    if (currentKey === "interests") return form.interests.length > 0;
+    if (currentKey === "lookingfor") return form.lookingForGender && form.ageMin && form.ageMax;
     return true;
   };
 
@@ -644,7 +526,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
       onSubmit({
         ...form, id: uid(), status: "en_attente", createdAt: now,
         subscriptionStartedAt: now,
-        subscriptionExpiresAt: addMonths(now, 12), // accès gratuit, validité 12 mois par défaut, ajustable ensuite dans l'admin
+        subscriptionExpiresAt: addMonths(now, 12),
         subscriptionPrice: 0,
         subscriptionPlanLabel: "Profil ajouté manuellement (gratuit)",
         isVip: false,
@@ -654,13 +536,12 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
       return;
     }
     const plan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
-    const isFreeCode = form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim());
     onSubmit({
       ...form, id: uid(), status: "en_attente", createdAt: now,
       subscriptionStartedAt: now,
       subscriptionExpiresAt: addMonths(now, plan.months),
       subscriptionPrice: isFreeCode ? 0 : plan?.price,
-      subscriptionPlanLabel: `${plan?.vip ? "VIP " : ""}${plan.months} mois${isFreeCode ? " (code promo)" : ""}`,
+      subscriptionPlanLabel: `${plan?.vip ? "VIP " : plan.label + " "}${plan.months} mois${isFreeCode ? " (code promo)" : ""}`,
       isVip: !!plan?.vip,
       contractAcceptedAt: now,
       paidViaPromoCode: !!isFreeCode,
@@ -669,7 +550,6 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
 
   return (
     <div style={{ maxWidth: 560, margin: "0 auto", padding: "0 20px" }}>
-      {/* Progress */}
       <div style={{ display: "flex", gap: 6, marginBottom: 36 }}>
         {steps.map((s, i) => (
           <div key={i} style={{
@@ -688,7 +568,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
         }}>{steps[step].title}</h2>
       </div>
 
-      {step === 0 && (
+      {currentKey === "info" && (
         <>
           <Field label="Prénom">
             <TextInput value={form.firstName} onChange={e => set("firstName", e.target.value)} placeholder="Votre prénom" />
@@ -718,7 +598,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           <Field label="Votre morphologie *" hint="Comment decririez-vous votre silhouette ?">
             <Select value={form.morphology} onChange={e => set("morphology", e.target.value)} placeholder="Choisir" options={["Mince", "Svelte / athletique", "Sportif(ve)", "Corpulent(e) / rond(e)", "En surpoids", "Peu importe"]} />
           </Field>
-          <Field label="Votre photo de profil (visage) *" hint="Visible uniquement par l agence, puis par votre futur match valide">
+          <Field label="Mettez une photo de profil *" hint="Visible uniquement par l agence, puis par votre futur match valide">
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar photo={photoPreview} name={form.firstName} size={64} />
               <label style={{
@@ -737,7 +617,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
             )}
           </Field>
 
-          <Field label="Votre photo en pied (corps entier) *" hint="Permet une meilleure mise en relation">
+          <Field label="Mettez une photo de vous entière *" hint="Permet une meilleure mise en relation">
             <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
               <Avatar photo={photoFullPreview} name={form.firstName} size={64} />
               <label style={{
@@ -755,11 +635,10 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
               </span>
             )}
           </Field>
-          </Field>
         </>
       )}
 
-      {step === 1 && (
+      {currentKey === "criteria" && (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <Field label="Ville">
@@ -770,11 +649,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
             </Field>
           </div>
           <Field label="Votre nationalite" hint="Selectionnez une ou plusieurs nationalites">
-            <NationalityPicker
-              selected={form.nationalities}
-              onToggle={toggleNationality}
-              pays={TOUS_LES_PAYS}
-            />
+            <NationalityPicker selected={form.nationalities} onToggle={toggleNationality} pays={TOUS_LES_PAYS} />
           </Field>
           <Field label="Situation familiale">
             <Select value={form.situation} onChange={e => set("situation", e.target.value)} placeholder="Choisir" options={SITUATIONS} />
@@ -801,7 +676,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
         </>
       )}
 
-      {step === 2 && (
+      {currentKey === "personality" && (
         <>
           <Field label="Niveau d etudes" hint="Facultatif">
             <Select value={form.educationLevel} onChange={e => set("educationLevel", e.target.value)} placeholder="Choisir" options={["Brevet / CAP / BEP", "Baccalauréat", "Bac+2 / BTS / DUT", "Bac+3 / Licence", "Bac+5 / Master", "Doctorat / Grande école", "Autre"]} />
@@ -815,17 +690,17 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           <Field label="Consommez-vous de l alcool ?">
             <Select value={form.availability} onChange={e => set("availability", e.target.value)} placeholder="Choisir" options={["Non, jamais", "Occasionnellement", "Oui, regulierement"]} />
           </Field>
-          <Field label="Décrivez-vous en quelques mots" hint="Facultatif - votre caractère, vos valeurs, ce qui vous rend unique">
+          <Field label="Décrivez-vous en quelques mots" hint="Facultatif">
             <textarea
               value={form.selfDescription} onChange={e => set("selfDescription", e.target.value)}
-              placeholder="Ex : Je suis quelquun de calme, attentionne(e), qui aime la famille et les valeurs traditionnelles..."
+              placeholder="Ex : Je suis quelqu'un de calme, attentionne(e)..."
               style={{ ...inputStyle, minHeight: 90, resize: "vertical", fontFamily: "Inter, sans-serif" }}
             />
           </Field>
-          <Field label="Ce qui est redhibitoire pour vous" hint="Facultatif - ce que vous refusez absolument chez l autre">
+          <Field label="Ce qui est redhibitoire pour vous" hint="Facultatif">
             <textarea
               value={form.dealbreakers} onChange={e => set("dealbreakers", e.target.value)}
-              placeholder="Ex : Je ne souhaite pas quelquun qui fume, ou qui ne veut pas denfants..."
+              placeholder="Ex : Je ne souhaite pas quelqu'un qui fume..."
               style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: "Inter, sans-serif" }}
             />
           </Field>
@@ -835,7 +710,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
         </>
       )}
 
-      {step === 3 && (
+      {currentKey === "interests" && (
         <Field label="Sélectionnez ce qui vous correspond" hint="Choisissez-en plusieurs">
           <div style={{ marginTop: 4 }}>
             {INTERESTS.map(i => (
@@ -845,7 +720,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
         </Field>
       )}
 
-      {step === 4 && (
+      {currentKey === "lookingfor" && (
         <>
           <Field label="Vous recherchez">
             <Select value={form.lookingForGender} onChange={e => set("lookingForGender", e.target.value)} placeholder="Choisir" options={["Femme", "Homme", "Peu importe"]} />
@@ -870,49 +745,14 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
             <Select value={form.lookingForMorphology} onChange={e => set("lookingForMorphology", e.target.value)} placeholder="Choisir" options={["Mince", "Svelte / athletique", "Sportif(ve)", "Corpulent(e) / rond(e)", "Peu importe"]} />
           </Field>
           <Field label="Nationalite recherchee" hint="Facultatif - laissez vide si peu importe">
-            <NationalityPicker
-              selected={form.lookingForNationalities}
-              onToggle={toggleLookingForNationality}
-              pays={TOUS_LES_PAYS}
-              placeholder="Toutes nationalites acceptees"
-            />
+            <NationalityPicker selected={form.lookingForNationalities} onToggle={toggleLookingForNationality} pays={TOUS_LES_PAYS} placeholder="Toutes nationalites acceptees" />
           </Field>
-          <Field label="Zones geographiques acceptees" hint="Selectionnez les zones, puis les pays si vous le souhaitez">
+          <Field label="Zones geographiques acceptees" hint="Selectionnez les zones">
             <div style={{ marginTop: 4 }}>
               {ZONES.map(z => (
                 <Pill key={z} active={form.acceptedZones.includes(z)} onClick={() => toggleZone(z)}>{z}</Pill>
               ))}
             </div>
-            {form.acceptedZones.includes("Europe") && !form.acceptedZones.includes("Peu importe") && (
-              <div style={{ marginTop: 14, padding: 14, background: COLORS.cream, borderRadius: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>Pays d Europe</div>
-                <div style={{ display: "flex", flexWrap: "wrap" }}>
-                  {PAYS_EUROPE.map(p => (
-                    <Pill key={p} active={form.selectedCountries.includes(p)} onClick={() => toggleCountry(p)}>{p}</Pill>
-                  ))}
-                </div>
-              </div>
-            )}
-            {form.acceptedZones.includes("Afrique") && !form.acceptedZones.includes("Peu importe") && (
-              <div style={{ marginTop: 14, padding: 14, background: COLORS.cream, borderRadius: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>Pays d Afrique</div>
-                <div style={{ display: "flex", flexWrap: "wrap" }}>
-                  {PAYS_AFRIQUE.map(p => (
-                    <Pill key={p} active={form.selectedCountries.includes(p)} onClick={() => toggleCountry(p)}>{p}</Pill>
-                  ))}
-                </div>
-              </div>
-            )}
-            {form.acceptedZones.includes("Amerique") && !form.acceptedZones.includes("Peu importe") && (
-              <div style={{ marginTop: 14, padding: 14, background: COLORS.cream, borderRadius: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>Pays d Amerique</div>
-                <div style={{ display: "flex", flexWrap: "wrap" }}>
-                  {PAYS_AMERIQUE.map(p => (
-                    <Pill key={p} active={form.selectedCountries.includes(p)} onClick={() => toggleCountry(p)}>{p}</Pill>
-                  ))}
-                </div>
-              </div>
-            )}
           </Field>
           <Field label="Quelques mots sur vous ou ce que vous recherchez" hint="Facultatif">
             <textarea
@@ -924,7 +764,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
         </>
       )}
 
-      {step === 5 && (
+      {currentKey === "plan" && (
         <Field label="Sélectionnez votre formule" hint="Votre profil sera actif pendant toute la durée choisie">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             {SUBSCRIPTION_PLANS.filter(p => !p.vip).map(plan => {
@@ -940,7 +780,10 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                     background: active ? COLORS.cream : "#fff",
                   }}
                 >
-                  <div style={{ fontSize: 13, color: COLORS.inkSoft, fontWeight: 600, textTransform: "uppercase" }}>
+                  <div style={{ fontSize: 13, color: COLORS.bordeaux, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {plan.label}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: COLORS.inkSoft, fontWeight: 600, textTransform: "uppercase", marginTop: 2 }}>
                     {plan.months} mois
                   </div>
                   <div style={{ fontFamily: "Playfair Display, serif", fontSize: 24, color: COLORS.bordeauxDark, marginTop: 4 }}>
@@ -987,7 +830,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
         </Field>
       )}
 
-      {step === 6 && (() => {
+      {currentKey === "payment" && (() => {
         const plan = SUBSCRIPTION_PLANS.find(p => p.id === form.subscriptionPlanId);
         return (
           <>
@@ -999,12 +842,12 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                 Contrat de mise en relation - {AGENCY_NAME}
               </h4>
               <p><strong>1. Objet.</strong> {AGENCY_NAME} propose un service de mise en relation entre personnes célibataires, sur la base des critères déclarés par le client lors de son inscription.</p>
-              <p><strong>2. Formule souscrite.</strong> {plan ? `${plan.vip ? "VIP " : ""}${plan.months} mois - ${plan.profiles} - ${plan.price} €` : "-"}.{plan?.vip && " La formule VIP comprend : (a) un entretien personnalisé en présentiel entre le client et l'agence, proposé uniquement aux clients résidant en France métropolitaine ; cette prestation pourra être étendue à l'international ultérieurement ; (b) l'organisation logistique des deux premiers rendez-vous de mise en relation (choix du lieu et de l'horaire par l'agence). Lors de ces rendez-vous de mise en relation, l'agence n'est pas présente : seules les deux personnes mises en relation s'y rencontrent."}</p>
-              <p><strong>3. Obligation de moyens.</strong> {AGENCY_NAME} s'engage à mettre en œuvre les moyens nécessaires à la recherche de profils compatibles (sélection, vérification déclarative, mise en relation). {AGENCY_NAME} n'a pas d'obligation de résultat et ne garantit pas la conclusion d'une relation durable.</p>
+              <p><strong>2. Formule souscrite.</strong> {plan ? `${plan.vip ? "VIP " : ""}${plan.months} mois - ${plan.profiles} - ${plan.price} €` : "-"}.{plan?.vip && " La formule VIP comprend : (a) un entretien personnalisé en présentiel entre le client et l'agence, proposé uniquement aux clients résidant en France métropolitaine ; (b) l'organisation logistique des deux premiers rendez-vous de mise en relation. Lors de ces rendez-vous, l'agence n'est pas présente."}</p>
+              <p><strong>3. Obligation de moyens.</strong> {AGENCY_NAME} s'engage à mettre en œuvre les moyens nécessaires à la recherche de profils compatibles. {AGENCY_NAME} n'a pas d'obligation de résultat.</p>
               <p><strong>4. Confidentialité.</strong> Les informations et la photo transmises restent strictement confidentielles et ne sont communiquées à un autre client qu'après validation d'une mise en relation par {AGENCY_NAME}.</p>
-              <p><strong>5. Durée et expiration.</strong> L'abonnement est valable pour la durée choisie à compter de la date de paiement. À l'expiration, le profil n'est plus proposé dans le cadre du matching jusqu'à son renouvellement.</p>
-              <p><strong>6. Droit de rétractation.</strong> Conformément à la réglementation applicable aux contrats de courtage matrimonial, le client dispose d'un délai de rétractation après la signature du présent contrat pour notifier sa décision de ne pas poursuivre, sauf début d'exécution expressément demandé par le client.</p>
-              <p><strong>7. Aucune garantie de résultat.</strong> Le nombre de profils ou de mises en relation indiqué dans la formule constitue un engagement de moyens et non une garantie de relation amoureuse ou de mariage.</p>
+              <p><strong>5. Durée et expiration.</strong> L'abonnement est valable pour la durée choisie à compter de la date de paiement.</p>
+              <p><strong>6. Droit de rétractation.</strong> Le client dispose d'un délai de rétractation après la signature du présent contrat, sauf début d'exécution expressément demandé.</p>
+              <p><strong>7. Aucune garantie de résultat.</strong> Le nombre de profils ou de mises en relation indiqué constitue un engagement de moyens, non une garantie de relation.</p>
             </div>
             <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 18, cursor: "pointer" }}>
               <input
@@ -1014,43 +857,183 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                 style={{ marginTop: 3, width: 17, height: 17, cursor: "pointer", accentColor: COLORS.bordeaux }}
               />
               <span style={{ fontSize: 14, color: COLORS.ink }}>
-                J ai lu et j accepte les termes du contrat ci-dessus. Je comprends que mon paiement valide mon inscription auprès de {AGENCY_NAME}.
+                J'ai lu et j'accepte les termes du contrat ci-dessus. Je comprends que mon paiement valide mon inscription auprès de {AGENCY_NAME}.
               </span>
             </label>
 
+            {/* ---- Code promo (bypass paiement) ---- */}
             <div style={{ marginTop: 22 }}>
-              <Field label="Code promo" hint="Si l agence vous en a fourni un">
+              <Field label="Code promo" hint="Si l'agence vous en a fourni un">
                 <TextInput
                   value={form.promoCode}
                   onChange={e => set("promoCode", e.target.value.toUpperCase())}
                   placeholder="Ex : BIENVENUE2026"
                 />
               </Field>
-              {form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim()) ? (
+              {isFreeCode && (
                 <div style={{
                   background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 8,
-                  padding: "12px 14px", fontSize: 13.5, color: "#2D5C3F", marginBottom: 16
+                  padding: "12px 14px", fontSize: 13.5, color: "#2D5C3F"
                 }}>
-                  Code valide - votre inscription est confirmee gratuitement.
-                </div>
-              ) : (
-                <StripePaymentForm
-                  plan={plan}
-                  onPaymentSuccess={() => set("paymentDone", true)}
-                  paymentDone={form.paymentDone}
-                />
-              )}
-            </div>
-              </Field>
-              {form.promoCode && FREE_ACCESS_CODES.includes(form.promoCode.trim()) && (
-                <div style={{
-                  background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 8,
-                  padding: "10px 14px", fontSize: 13.5, color: "#2D5C3F"
-                }}>
-                  Code valide - votre inscription est confirmee.
+                  Code valide — votre inscription sera gratuite, sans paiement à effectuer.
                 </div>
               )}
             </div>
+
+            {/* ---- Paiement (obligatoire si pas de code promo valide) ---- */}
+            {!isFreeCode && (
+              <div style={{ marginTop: 22 }}>
+                <Field label="Moyen de paiement">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => { set("paymentMethod", "card"); set("paymentReference", ""); set("paymentSelfConfirmed", false); setPaymentConfirmed(false); }}
+                      style={{
+                        padding: "16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                        border: `2px solid ${form.paymentMethod === "card" ? COLORS.bordeaux : COLORS.creamDark}`,
+                        background: form.paymentMethod === "card" ? COLORS.cream : "#fff",
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink }}>Carte bancaire / PayPal</div>
+                      <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 3 }}>France, Europe, international</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { set("paymentMethod", "mobile_money"); set("paymentReference", ""); set("paymentSelfConfirmed", false); setPaymentConfirmed(false); }}
+                      style={{
+                        padding: "16px", borderRadius: 10, textAlign: "left", cursor: "pointer",
+                        border: `2px solid ${form.paymentMethod === "mobile_money" ? COLORS.bordeaux : COLORS.creamDark}`,
+                        background: form.paymentMethod === "mobile_money" ? COLORS.cream : "#fff",
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink }}>Mobile Money</div>
+                      <div style={{ fontSize: 12.5, color: COLORS.inkSoft, marginTop: 3 }}>Orange Money, MTN, Wave, Moov...</div>
+                    </button>
+                  </div>
+                </Field>
+
+                {form.paymentMethod === "card" && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => set("paymentProvider", "stripe")}
+                        disabled={!plan?.stripeLink}
+                        style={{
+                          padding: "12px", borderRadius: 8, textAlign: "center", cursor: plan?.stripeLink ? "pointer" : "not-allowed",
+                          border: `2px solid ${form.paymentProvider === "stripe" ? COLORS.bordeaux : COLORS.creamDark}`,
+                          background: form.paymentProvider === "stripe" ? COLORS.cream : "#fff",
+                          opacity: plan?.stripeLink ? 1 : 0.45, fontSize: 14, fontWeight: 600, color: COLORS.ink,
+                        }}
+                      >
+                        Payer par Stripe
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => set("paymentProvider", "paypal")}
+                        disabled={!plan?.paypalLink}
+                        style={{
+                          padding: "12px", borderRadius: 8, textAlign: "center", cursor: plan?.paypalLink ? "pointer" : "not-allowed",
+                          border: `2px solid ${form.paymentProvider === "paypal" ? COLORS.bordeaux : COLORS.creamDark}`,
+                          background: form.paymentProvider === "paypal" ? COLORS.cream : "#fff",
+                          opacity: plan?.paypalLink ? 1 : 0.45, fontSize: 14, fontWeight: 600, color: COLORS.ink,
+                        }}
+                      >
+                        Payer par PayPal
+                      </button>
+                    </div>
+
+                    {form.paymentProvider && chosenPaymentLink && !paymentConfirmed && (
+                      <>
+                        <Button
+                          onClick={() => { window.open(chosenPaymentLink, "_blank"); setPaymentConfirmed(true); }}
+                          variant="gold"
+                          style={{ width: "100%", justifyContent: "center", marginBottom: 10 }}
+                        >
+                          Procéder au paiement ({selectedPlan?.price} €)
+                        </Button>
+                        <p style={{ fontSize: 12.5, color: COLORS.inkSoft, marginBottom: 12 }}>
+                          Une nouvelle page va s'ouvrir pour entrer votre carte bancaire. Si rien ne s'ouvre, vérifiez que votre navigateur n'a pas bloqué la fenêtre (icône de blocage pop-up dans la barre d'adresse).
+                        </p>
+                      </>
+                    )}
+                    {form.paymentProvider && !chosenPaymentLink && (
+                      <div style={{
+                        background: "#FBF6EA", border: `1px solid ${COLORS.goldLight}`, borderRadius: 8,
+                        padding: "12px 14px", fontSize: 13, color: COLORS.bordeauxDark, marginBottom: 12
+                      }}>
+                        Ce moyen de paiement n'est pas encore activé pour cette formule. Contactez l'agence.
+                      </div>
+                    )}
+
+                    {form.paymentProvider && chosenPaymentLink && paymentConfirmed && (
+                      <>
+                        <div style={{
+                          background: "#E8F3EC", border: "1px solid #B8E0C6", borderRadius: 8,
+                          padding: "12px 14px", fontSize: 13, color: "#2D5C3F", marginBottom: 14
+                        }}>
+                          Une fois votre paiement terminé sur la page qui s'est ouverte, confirmez ci-dessous pour valider votre inscription.
+                        </div>
+                        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14, cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!form.paymentSelfConfirmed}
+                            onChange={e => set("paymentSelfConfirmed", e.target.checked)}
+                            style={{ marginTop: 3, width: 17, height: 17, cursor: "pointer", accentColor: COLORS.bordeaux }}
+                          />
+                          <span style={{ fontSize: 14, color: COLORS.ink }}>
+                            Je confirme avoir effectué le paiement de {selectedPlan?.price} €.
+                          </span>
+                        </label>
+                        <Field label="Référence de paiement" hint="Facultatif — si vous l'avez sous la main, ça aide l'agence à vérifier plus vite">
+                          <TextInput
+                            value={form.paymentReference || ""}
+                            onChange={e => set("paymentReference", e.target.value)}
+                            placeholder="cs_live_xxxxxxxxxxxx"
+                          />
+                        </Field>
+                        <Button variant="ghost" onClick={() => setPaymentConfirmed(false)} style={{ fontSize: 12.5, padding: "4px 0" }}>
+                          Rouvrir la page de paiement
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {form.paymentMethod === "mobile_money" && (
+                  <div>
+                    <div style={{
+                      background: "#FBF6EA", border: `1px solid ${COLORS.goldLight}`, borderRadius: 8,
+                      padding: "12px 14px", fontSize: 13, color: COLORS.bordeauxDark, marginBottom: 16
+                    }}>
+                      Envoyez {selectedPlan?.price} € au numéro Mobile Money communiqué par l'agence.
+                    </div>
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!form.paymentSelfConfirmed}
+                        onChange={e => set("paymentSelfConfirmed", e.target.checked)}
+                        style={{ marginTop: 3, width: 17, height: 17, cursor: "pointer", accentColor: COLORS.bordeaux }}
+                      />
+                      <span style={{ fontSize: 14, color: COLORS.ink }}>
+                        Je confirme avoir envoyé le paiement de {selectedPlan?.price} €.
+                      </span>
+                    </label>
+                    <Field label="Numéro de transaction Mobile Money" hint="Facultatif — reçu par SMS, si vous l'avez">
+                      <TextInput
+                        value={form.paymentReference || ""}
+                        onChange={e => set("paymentReference", e.target.value)}
+                        placeholder="Ex : MP240712.1234.A56789"
+                      />
+                    </Field>
+                  </div>
+                )}
+
+                {!form.paymentMethod && (
+                  <p style={{ fontSize: 13, color: COLORS.inkSoft }}>Choisissez un moyen de paiement pour continuer, ou entrez un code promo valide ci-dessus.</p>
+                )}
+              </div>
+            )}
           </>
         );
       })()}
@@ -1065,11 +1048,10 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           </Button>
         ) : (
           <Button onClick={handleSubmit} disabled={!canNext()} variant="gold">
-            <Check size={16} /> {adminMode ? "Ajouter ce profil" : "Valider mon inscription"}
+            <Check size={16} /> {adminMode ? "Ajouter ce profil" : "Envoyer mon profil"}
           </Button>
         )}
       </div>
-      )}
     </div>
   );
 }
@@ -1165,6 +1147,7 @@ function downloadProfileAsPdf(profile) {
         ${row("Zones acceptées", (profile.acceptedZones || []).join(", "))}
         ${row("Formule", profile.subscriptionPlanLabel)}
         ${row("Statut abonnement", isSubscriptionActive(profile) ? `Actif (${daysRemaining(profile)} j restants)` : "Expiré")}
+        ${row("Reference paiement", profile.paymentReference)}
       </table>
       <div style="margin-top:18px;">${interestsHtml}</div>
       ${profile.selfDescription ? `<div class="about">"${profile.selfDescription}"</div>` : ""}
@@ -1204,6 +1187,7 @@ function ProfileCard({ profile, onClose, onSaveNotes }) {
                 border: `2px solid ${COLORS.goldLight}`
               }} />
             )}
+          </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <h3 style={{ fontFamily: "Playfair Display, serif", fontSize: 22, color: COLORS.bordeauxDark, margin: 0 }}>
@@ -1224,7 +1208,7 @@ function ProfileCard({ profile, onClose, onSaveNotes }) {
             background: COLORS.goldLight + "33", border: `1px solid ${COLORS.goldLight}`, borderRadius: 10,
             padding: "12px 14px", marginBottom: 16, fontSize: 13.5, color: COLORS.bordeauxDark
           }}>
-            Formule VIP - pensez à organiser l'entretien personnalisé en présentiel avec ce client, ainsi que la logistique (lieu et horaire) des deux premiers rendez-vous de mise en relation. Vous n'avez pas à être présente à ces deux rendez-vous.
+            Formule VIP - pensez à organiser l'entretien personnalisé en présentiel avec ce client, ainsi que la logistique des deux premiers rendez-vous de mise en relation.
           </div>
         )}
         <DetailRow icon={MapPin} label="Ville / Pays" value={`${profile.city || ""}${profile.country ? " - " + profile.country : ""}`} />
@@ -1250,6 +1234,12 @@ function ProfileCard({ profile, onClose, onSaveNotes }) {
         {profile.lookingForMorphology && <DetailRow icon={User} label="Type physique recherche" value={profile.lookingForMorphology} />}
         {(profile.acceptedZones || []).length > 0 && (
           <DetailRow icon={MapPin} label="Zones acceptées" value={profile.acceptedZones.join(", ")} />
+        )}
+        {profile.paymentReference && (
+          <DetailRow icon={Lock} label="Reference paiement" value={profile.paymentReference} />
+        )}
+        {profile.paidViaPromoCode && (
+          <DetailRow icon={Lock} label="Paiement" value="Code promo (gratuit)" />
         )}
         {profile.selfDescription && (
           <div style={{ marginTop: 12, padding: 12, background: COLORS.cream, borderRadius: 8, fontSize: 13.5, fontStyle: "italic", color: COLORS.ink }}>
@@ -1281,7 +1271,6 @@ function ProfileCard({ profile, onClose, onSaveNotes }) {
             "{profile.about}"
           </div>
         )}
-        {/* Section Notes Privees Admin */}
         <div style={{
           marginTop: 20, padding: 16, background: "#FFF8E7",
           border: `1px solid ${COLORS.goldLight}`, borderRadius: 10
@@ -1305,7 +1294,7 @@ function ProfileCard({ profile, onClose, onSaveNotes }) {
                   options={["Reguliere", "Irreguliere", "En cours de regularisation", "Non precise"]}
                 />
               </Field>
-              <Field label="Accepte une relation avec quelquun en situation irreguliere ?">
+              <Field label="Accepte une relation avec quelqu'un en situation irreguliere ?">
                 <Select
                   value={notes.adminAcceptIrregular}
                   onChange={e => setNotes(n => ({ ...n, adminAcceptIrregular: e.target.value }))}
@@ -1582,7 +1571,7 @@ function RenewModal({ profile, onClose, onConfirm }) {
               }}
             >
               <div style={{ fontSize: 12, color: COLORS.inkSoft, fontWeight: 600 }}>
-                {plan.vip ? "VIP · " : ""}{plan.months} mois
+                {plan.vip ? "VIP · " : plan.label + " · "}{plan.months} mois
               </div>
               <div style={{ fontFamily: "Playfair Display, serif", fontSize: 18, color: COLORS.bordeauxDark }}>{plan.price} €</div>
             </button>
@@ -1637,7 +1626,7 @@ function MatchedView({ profile, partner, onBack }) {
 
 // ---------- Main App ----------
 export default function App() {
-  const [view, setView] = useState("home"); // home, register, admin-login, admin, confirmation
+  const [view, setView] = useState("home");
   const [profiles, setProfiles] = useState([]);
   const [matches, setMatches] = useState([]);
   const [adminAuthed, setAdminAuthed] = useState(false);
@@ -1655,7 +1644,6 @@ export default function App() {
     })();
   }, []);
 
-  // Recompute matches whenever profiles change
   useEffect(() => {
     if (loading) return;
     const existingPairs = new Set(matches.map(m => [m.aId, m.bId].sort().join("|")));
@@ -1680,10 +1668,13 @@ export default function App() {
   }, [profiles, loading]);
 
   const handleRegister = async (profile) => {
-    const updated = [...profiles, profile];
-    setProfiles(updated);
-    await saveProfiles(updated);
-    setView("confirmation");
+    const ok = await saveOneProfile(profile);
+    if (ok) {
+      setProfiles(p => [...p, profile]);
+      setView("confirmation");
+    } else {
+      setView("registration-error");
+    }
   };
 
   const handleAddProfileManually = async (profile) => {
@@ -1712,6 +1703,7 @@ export default function App() {
     const updated = profiles.filter(p => p.id !== id);
     setProfiles(updated);
     await saveProfiles(updated);
+    await deleteProfileDoc(id);
   };
 
   const handleRenew = async (id, planId) => {
@@ -1722,7 +1714,7 @@ export default function App() {
       subscriptionStartedAt: now,
       subscriptionExpiresAt: addMonths(now, plan.months),
       subscriptionPrice: plan?.price,
-      subscriptionPlanLabel: plan?.vip ? `VIP ${plan.months} mois` : `${plan.months} mois`,
+      subscriptionPlanLabel: plan?.vip ? `VIP ${plan.months} mois` : `${plan.label} ${plan.months} mois`,
       isVip: !!plan?.vip,
     } : p);
     setProfiles(updated);
@@ -1815,11 +1807,33 @@ export default function App() {
     );
   }
 
-  // Home
+  if (view === "registration-error") {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.cream, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {fontImports}
+        <div style={{ textAlign: "center", maxWidth: 420, padding: 20 }}>
+          <div style={{
+            width: 64, height: 64, borderRadius: "50%", background: "#A33", margin: "0 auto 20px",
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}>
+            <X size={28} color="#fff" />
+          </div>
+          <h2 style={{ fontFamily: "Playfair Display, serif", fontSize: 26, color: COLORS.bordeauxDark }}>
+            Un problème technique est survenu
+          </h2>
+          <p style={{ color: COLORS.inkSoft, marginTop: 10, lineHeight: 1.6 }}>
+            Votre profil n'a pas pu être enregistré (probablement une photo trop volumineuse). Merci de réessayer avec des photos plus légères, ou de contacter directement l'agence pour finaliser votre inscription.
+          </p>
+          <Button onClick={() => setView("register")} style={{ marginTop: 24 }}>Réessayer</Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: COLORS.cream }}>
       {fontImports}
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "60px 24px", textAlign: "center" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "80px 24px", textAlign: "center" }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
           <Heart size={32} color={COLORS.bordeaux} fill={COLORS.bordeaux} />
         </div>
@@ -1828,71 +1842,27 @@ export default function App() {
           textTransform: "uppercase", color: COLORS.gold, fontWeight: 600, marginBottom: 18
         }}>{AGENCY_NAME}</div>
         <h1 style={{
-          fontFamily: "Playfair Display, serif", fontSize: 38, color: COLORS.bordeauxDark,
+          fontFamily: "Playfair Display, serif", fontSize: 42, color: COLORS.bordeauxDark,
           margin: "0 0 16px", lineHeight: 1.15
         }}>
-          Des rencontres pensees<br />avec discretion
+          Des rencontres pensées<br />avec discrétion
         </h1>
-        <p style={{ fontSize: 15, color: COLORS.inkSoft, maxWidth: 460, margin: "0 auto 40px", lineHeight: 1.6 }}>
-          Votre profil reste prive. Vous decouvrez l autre seulement lorsqu une mise en
-          relation a ete validee personnellement par l agence.
+        <p style={{ fontSize: 16, color: COLORS.inkSoft, maxWidth: 460, margin: "0 auto 40px", lineHeight: 1.6 }}>
+          Votre profil reste privé. Vous découvrez l'autre seulement lorsqu'une mise en
+          relation a été validée personnellement par l'agence.
         </p>
-
-        {/* Section Formules et Prix */}
-        <div style={{ marginBottom: 48 }}>
-          <h2 style={{ fontFamily: "Playfair Display, serif", fontSize: 24, color: COLORS.bordeauxDark, marginBottom: 8 }}>
-            Nos formules
-          </h2>
-          <p style={{ fontSize: 13.5, color: COLORS.inkSoft, marginBottom: 28 }}>
-            Choisissez votre formule, payez, puis creez votre profil.
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 14, textAlign: "left" }}>
-            {SUBSCRIPTION_PLANS.filter(p => !p.vip).map(plan => (
-              <div key={plan.id} style={{
-                background: "#fff", borderRadius: 12, padding: 20,
-                border: `1px solid ${COLORS.creamDark}`
-              }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  {plan.months} mois
-                </div>
-                <div style={{ fontFamily: "Playfair Display, serif", fontSize: 28, color: COLORS.bordeauxDark, margin: "6px 0" }}>
-                  {plan.price} €
-                </div>
-                <div style={{ fontSize: 13, color: COLORS.inkSoft }}>{plan.profiles}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Formule VIP */}
-          {SUBSCRIPTION_PLANS.filter(p => p.vip).map(plan => (
-            <div key={plan.id} style={{
-              background: COLORS.goldLight + "22", border: `1.5px solid ${COLORS.gold}`,
-              borderRadius: 12, padding: 20, marginTop: 14, textAlign: "left"
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.gold, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                VIP · {plan.months} mois
-              </div>
-              <div style={{ fontFamily: "Playfair Display, serif", fontSize: 28, color: COLORS.bordeauxDark, margin: "6px 0" }}>
-                {plan.price} €
-              </div>
-              <div style={{ fontSize: 13, color: COLORS.inkSoft }}>{plan.profiles}</div>
-              <div style={{ fontSize: 12, color: COLORS.inkSoft, marginTop: 6 }}>{plan.description}</div>
-            </div>
-          ))}
-        </div>
-
         <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
           <Button onClick={() => setView("register")} style={{ padding: "15px 32px", fontSize: 15.5 }}>
-            <Plus size={17} /> Je m inscrire
+            <Plus size={17} /> Créer mon profil
           </Button>
           <Button onClick={() => setView("admin-login")} variant="secondary" style={{ padding: "15px 32px", fontSize: 15.5 }}>
             <Lock size={16} /> Espace agence
           </Button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 48, textAlign: "left" }}>
-          <FeatureCard icon={Lock} title="Confidentialite totale" text="Personne ne voit votre profil avant une validation manuelle." />
-          <FeatureCard icon={Sparkles} title="Matching automatique" text="Les profils compatibles sont detectes selon vos criteres reels." />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 72, textAlign: "left" }}>
+          <FeatureCard icon={Lock} title="Confidentialité totale" text="Personne ne voit votre profil avant une validation manuelle." />
+          <FeatureCard icon={Sparkles} title="Matching automatique" text="Les profils compatibles sont détectés selon vos critères réels." />
           <FeatureCard icon={Users} title="Validation humaine" text="Aucune mise en contact sans l accord de l agence." />
         </div>
       </div>
