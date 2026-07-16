@@ -53,7 +53,7 @@ const AGENCY_NAME = "RAM'S Libala";
 const FREE_ACCESS_CODES = ["RAMSLIBALA-OFFERT", "BIENVENUE2026"];
 
 const SUBSCRIPTION_PLANS = [
-  { id: "decouverte-3", months: 3, price: 49, label: "Découverte", profiles: "2 à 3 profils proposés", stripeLink: "https://buy.stripe.com/aFacN794cb2idTI34w1ZS02" },
+  { id: "decouverte-3", months: 3, price: 49, label: "Découverte", profiles: "2 à 3 profils proposés", stripeLink: "https://buy.stripe.com/3cIaEZ94c1rI2b08oQ1ZS07" },
   { id: "standard-6", months: 6, price: 99, label: "Standard", profiles: "5 à 6 profils proposés", stripeLink: "https://buy.stripe.com/fZu4gBgwEeeu6rg20s1ZS03" },
   { id: "standard-12", months: 12, price: 160, label: "Premium", profiles: "9 à 11 profils proposés", stripeLink: "https://buy.stripe.com/7sY6oJ3JSc6m4j8dJa1ZS05" },
   {
