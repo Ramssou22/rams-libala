@@ -85,6 +85,34 @@ function uid() {
 }
 
 // ---------- Matching engine ----------
+
+// Déduit la zone géographique (France / Europe / Afrique / Amerique) à partir du pays saisi en texte libre.
+// Retourne null si le pays n'est pas reconnu (dans ce cas, on ne bloque pas le match par prudence).
+const ZONE_COUNTRY_MAP = {
+  "france": "France",
+  "belgique": "Europe", "suisse": "Europe", "espagne": "Europe", "portugal": "Europe",
+  "italie": "Europe", "allemagne": "Europe", "royaume-uni": "Europe", "angleterre": "Europe",
+  "pays-bas": "Europe", "luxembourg": "Europe", "irlande": "Europe", "pologne": "Europe",
+  "roumanie": "Europe", "grece": "Europe", "suede": "Europe", "norvege": "Europe",
+  "danemark": "Europe", "autriche": "Europe", "ukraine": "Europe", "russie": "Europe",
+  "maroc": "Afrique", "algerie": "Afrique", "tunisie": "Afrique", "senegal": "Afrique",
+  "mali": "Afrique", "cote d'ivoire": "Afrique", "cote divoire": "Afrique", "ivoirien": "Afrique",
+  "congo": "Afrique", "rdc": "Afrique", "republique democratique du congo": "Afrique",
+  "cameroun": "Afrique", "gabon": "Afrique", "benin": "Afrique", "togo": "Afrique",
+  "burkina faso": "Afrique", "guinee": "Afrique", "niger": "Afrique", "tchad": "Afrique",
+  "madagascar": "Afrique", "angola": "Afrique", "mauritanie": "Afrique", "rwanda": "Afrique",
+  "nigeria": "Afrique", "ghana": "Afrique", "kenya": "Afrique", "ethiopie": "Afrique",
+  "etats-unis": "Amerique", "usa": "Amerique", "canada": "Amerique", "bresil": "Amerique",
+  "mexique": "Amerique", "argentine": "Amerique", "haiti": "Amerique", "colombie": "Amerique",
+  "republique dominicaine": "Amerique",
+};
+function guessZone(country) {
+  if (!country) return null;
+  const key = country.trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // enlève les accents
+  return ZONE_COUNTRY_MAP[key] || null;
+}
+
 function computeScore(a, b) {
   if (a.id === b.id) return 0;
   if (!isSubscriptionActive(a) || !isSubscriptionActive(b)) return 0;
@@ -94,49 +122,96 @@ function computeScore(a, b) {
   if (a.adminAcceptIrregular === "Non" && b.adminSituation === "Irreguliere") return 0;
   if (b.adminAcceptIrregular === "Non" && a.adminSituation === "Irreguliere") return 0;
 
-  let score = 0;
-  let max = 0;
-
-  max += 18;
+  // --- Critère éliminatoire : âge souhaité ---
   const aAge = Number(a.age), bAge = Number(b.age);
   const aWantsMin = Number(a.ageMin) || 0, aWantsMax = Number(a.ageMax) || 200;
   const bWantsMin = Number(b.ageMin) || 0, bWantsMax = Number(b.ageMax) || 200;
-  const aFits = bAge >= aWantsMin && bAge <= aWantsMax;
-  const bFits = aAge >= bWantsMin && aAge <= bWantsMax;
-  if (aFits && bFits) score += 18;
-  else if (aFits || bFits) score += 7;
+  const aAgeFits = bAge >= aWantsMin && bAge <= aWantsMax;
+  const bAgeFits = aAge >= bWantsMin && aAge <= bWantsMax;
+  if (!aAgeFits || !bAgeFits) return 0;
 
-  max += 10;
-  if (a.city && b.city && a.city.trim().toLowerCase() === b.city.trim().toLowerCase()) score += 10;
+  // --- Critère éliminatoire : zone géographique souhaitée ---
+  const aZones = new Set((a.acceptedZones || []).filter(z => z !== "Peu importe"));
+  const bZones = new Set((b.acceptedZones || []).filter(z => z !== "Peu importe"));
+  const bOwnZone = guessZone(b.country);
+  const aOwnZone = guessZone(a.country);
+  const aZoneOk = aZones.size === 0 || !bOwnZone || aZones.has(bOwnZone);
+  const bZoneOk = bZones.size === 0 || !aOwnZone || bZones.has(aOwnZone);
+  if (!aZoneOk || !bZoneOk) return 0;
 
-  max += 17;
-  if (a.wantsChildren && b.wantsChildren) {
-    if (a.wantsChildren === b.wantsChildren) score += 17;
-    else if (a.wantsChildren === "Peu importe" || b.wantsChildren === "Peu importe") score += 10;
+  // --- Critère éliminatoire : nationalité souhaitée ---
+  const aNats = new Set(a.nationalities || []);
+  const bNats = new Set(b.nationalities || []);
+  const aLooking = (a.lookingForNationalities || []).filter(n => n !== "Peu importe");
+  const bLooking = (b.lookingForNationalities || []).filter(n => n !== "Peu importe");
+  const aNatOk = aLooking.length === 0 || [...bNats].some(n => aLooking.includes(n));
+  const bNatOk = bLooking.length === 0 || [...aNats].some(n => bLooking.includes(n));
+  if (!aNatOk || !bNatOk) return 0;
+
+  // --- Critère éliminatoire : désir d'avoir (encore) des enfants ---
+  if (a.wantsChildren && b.wantsChildren && a.wantsChildren !== "Peu importe" && b.wantsChildren !== "Peu importe") {
+    if (a.wantsChildren !== b.wantsChildren) return 0;
   }
 
-  max += 13;
-  if (a.religion && b.religion) {
-    if (a.religion === b.religion) score += 13;
-    else if (a.religion === "Peu importe" || b.religion === "Peu importe") score += 7;
+  // --- Critère éliminatoire : nombre d'enfants déjà existants du/de la partenaire ---
+  const CHILDREN_MAX_MAP = { "Aucun enfant uniquement": 0, "1 enfant maximum": 1, "2 enfants maximum": 2, "3 enfants maximum": 3 };
+  function childrenCountOk(person, partner) {
+    const limitLabel = person.lookingForChildrenMax;
+    if (!limitLabel || limitLabel === "Peu importe") return true;
+    const max = CHILDREN_MAX_MAP[limitLabel];
+    if (max === undefined) return true;
+    const partnerCount = partner.hasChildren === "Oui" ? (Number(partner.numberOfChildren) || 0) : 0;
+    return partnerCount <= max;
+  }
+  if (!childrenCountOk(a, b) || !childrenCountOk(b, a)) return 0;
+
+  // --- Critère éliminatoire : religion ---
+  if (a.religion && b.religion && a.religion !== "Peu importe" && b.religion !== "Peu importe") {
+    if (a.religion !== b.religion) return 0;
   }
 
-  max += 12;
+  // --- Critère éliminatoire : taille souhaitée ---
   const bHeight = Number(b.height), aHeight = Number(a.height);
   const aHMin = Number(a.lookingForHeightMin) || 0, aHMax = Number(a.lookingForHeightMax) || 999;
   const bHMin = Number(b.lookingForHeightMin) || 0, bHMax = Number(b.lookingForHeightMax) || 999;
   const aHeightFits = !bHeight || (bHeight >= aHMin && bHeight <= aHMax);
   const bHeightFits = !aHeight || (aHeight >= bHMin && aHeight <= bHMax);
-  if (aHeightFits && bHeightFits) score += 12;
-  else if (aHeightFits || bHeightFits) score += 5;
+  if (!aHeightFits || !bHeightFits) return 0;
+
+  // --- Critère éliminatoire : morphologie souhaitée ---
+  function morphologyOk(person, partner) {
+    const wanted = person.lookingForMorphology;
+    if (!wanted || wanted === "Peu importe") return true;
+    if (!partner.morphology) return true;
+    return partner.morphology === wanted;
+  }
+  if (!morphologyOk(a, b) || !morphologyOk(b, a)) return 0;
+
+  // --- Critère éliminatoire : tabac ---
+  function smokerOk(person, partner) {
+    const wanted = person.lookingForSmoker;
+    if (!wanted || wanted === "Peu importe") return true;
+    if (!partner.smoker) return true;
+    return partner.smoker === "Non fumeur(se)";
+  }
+  if (!smokerOk(a, b) || !smokerOk(b, a)) return 0;
+
+  // --- Critère éliminatoire : alcool ---
+  function alcoholOk(person, partner) {
+    const wanted = person.lookingForAlcohol;
+    if (!wanted || wanted === "Peu importe") return true;
+    if (!partner.availability) return true;
+    if (wanted === "Non, jamais uniquement") return partner.availability === "Non, jamais";
+    if (wanted === "Occasionnellement accepté") return partner.availability !== "Oui, regulierement";
+    return true;
+  }
+  if (!alcoholOk(a, b) || !alcoholOk(b, a)) return 0;
+
+  let score = 0;
+  let max = 0;
 
   max += 10;
-  const aZones = new Set(a.acceptedZones || []);
-  const bZones = new Set(b.acceptedZones || []);
-  const zonesOverlap = aZones.size === 0 || bZones.size === 0
-    || aZones.has("Peu importe") || bZones.has("Peu importe")
-    || [...aZones].some(z => bZones.has(z));
-  if (zonesOverlap) score += 10;
+  if (a.city && b.city && a.city.trim().toLowerCase() === b.city.trim().toLowerCase()) score += 10;
 
   max += 20;
   const aInt = new Set(a.interests || []);
@@ -144,16 +219,6 @@ function computeScore(a, b) {
   const shared = [...aInt].filter(x => bInt.has(x)).length;
   const denom = Math.max(aInt.size, bInt.size, 1);
   score += Math.round((shared / denom) * 20);
-
-  max += 15;
-  const aNats = new Set(a.nationalities || []);
-  const bNats = new Set(b.nationalities || []);
-  const aLooking = a.lookingForNationalities || [];
-  const bLooking = b.lookingForNationalities || [];
-  const aWantsMatch = aLooking.length === 0 || [...aNats].some(n => aLooking.includes(n)) || bLooking.length === 0;
-  const bWantsMatch = bLooking.length === 0 || [...bNats].some(n => bLooking.includes(n)) || aLooking.length === 0;
-  if (aWantsMatch && bWantsMatch) score += 15;
-  else if (aWantsMatch || bWantsMatch) score += 5;
 
   return Math.round((score / max) * 100);
 }
@@ -409,7 +474,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const [form, setForm] = useState({
     firstName: "", age: "", gender: "", city: "", country: "", email: "", phone: "", nationalities: [], situation: "", hasChildren: "", numberOfChildren: "", childrenAges: "", wantsChildren: "",
     religion: "", profession: "", educationLevel: "", smoker: "", lifestyle: "", housingStatus: "", availability: "", morphology: "", lookingForMorphology: "", lookingForNationalities: [],
-    interests: [], lookingForGender: "", ageMin: "", ageMax: "",
+    interests: [], lookingForGender: "", ageMin: "", ageMax: "", lookingForChildrenMax: "Peu importe", lookingForSmoker: "Peu importe", lookingForAlcohol: "Peu importe",
     height: "", lookingForHeightMin: "", lookingForHeightMax: "", acceptedZones: [],
     dealbreakers: "", selfDescription: "", whyAgency: "",
     about: "", photo: null, photoFull: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "", paymentSelfConfirmed: false,
@@ -733,6 +798,14 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
               <TextInput type="number" value={form.ageMax} onChange={e => set("ageMax", e.target.value)} placeholder="45" />
             </Field>
           </div>
+          <Field label="Enfants du/de la partenaire" hint="Combien d'enfants acceptez-vous chez la personne recherchée ?">
+            <Select
+              value={form.lookingForChildrenMax}
+              onChange={e => set("lookingForChildrenMax", e.target.value)}
+              placeholder="Choisir"
+              options={["Peu importe", "Aucun enfant uniquement", "1 enfant maximum", "2 enfants maximum", "3 enfants maximum"]}
+            />
+          </Field>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <Field label="Taille minimum (cm)" hint="Facultatif">
               <TextInput type="number" value={form.lookingForHeightMin} onChange={e => set("lookingForHeightMin", e.target.value)} placeholder="165" />
@@ -743,6 +816,12 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           </div>
           <Field label="Type physique recherche" hint="Facultatif">
             <Select value={form.lookingForMorphology} onChange={e => set("lookingForMorphology", e.target.value)} placeholder="Choisir" options={["Mince", "Svelte / athletique", "Sportif(ve)", "Corpulent(e) / rond(e)", "Peu importe"]} />
+          </Field>
+          <Field label="Fumeur(se) accepté(e) ?" hint="Facultatif">
+            <Select value={form.lookingForSmoker} onChange={e => set("lookingForSmoker", e.target.value)} placeholder="Choisir" options={["Non fumeur(se) uniquement", "Peu importe"]} />
+          </Field>
+          <Field label="Consommation d'alcool acceptée ?" hint="Facultatif">
+            <Select value={form.lookingForAlcohol} onChange={e => set("lookingForAlcohol", e.target.value)} placeholder="Choisir" options={["Non, jamais uniquement", "Occasionnellement accepté", "Peu importe"]} />
           </Field>
           <Field label="Nationalite recherchee" hint="Facultatif - laissez vide si peu importe">
             <NationalityPicker selected={form.lookingForNationalities} onToggle={toggleLookingForNationality} pays={TOUS_LES_PAYS} placeholder="Toutes nationalites acceptees" />
