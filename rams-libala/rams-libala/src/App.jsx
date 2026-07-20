@@ -1267,12 +1267,26 @@ function ProfileCard({ profile, onClose, onSaveNotes }) {
       }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
           <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-            <Avatar photo={profile.photo} name={profile.firstName} size={72} />
+            <div>
+              <Avatar photo={profile.photo} name={profile.firstName} size={72} />
+              {profile.photo && (
+                <a href={profile.photo} download={`${profile.firstName || "profil"}-visage.jpg`}
+                  style={{ display: "block", textAlign: "center", fontSize: 11, color: COLORS.bordeaux, marginTop: 4, textDecoration: "none" }}>
+                  Télécharger
+                </a>
+              )}
+            </div>
             {profile.photoFull && (
-              <img src={profile.photoFull} alt="Photo en pied" style={{
-                width: 72, height: 96, objectFit: "cover", borderRadius: 8,
-                border: `2px solid ${COLORS.goldLight}`
-              }} />
+              <div>
+                <img src={profile.photoFull} alt="Photo en pied" style={{
+                  width: 72, height: 96, objectFit: "cover", borderRadius: 8,
+                  border: `2px solid ${COLORS.goldLight}`
+                }} />
+                <a href={profile.photoFull} download={`${profile.firstName || "profil"}-entiere.jpg`}
+                  style={{ display: "block", textAlign: "center", fontSize: 11, color: COLORS.bordeaux, marginTop: 4, textDecoration: "none" }}>
+                  Télécharger
+                </a>
+              </div>
             )}
           </div>
           <div>
