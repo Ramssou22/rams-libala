@@ -293,6 +293,14 @@ async function saveMatches(matches) {
   }
 }
 
+async function deleteMatchDoc(id) {
+  try {
+    await deleteDoc(doc(db, "matches", id));
+  } catch (e) {
+    console.error("deleteMatch error:", e);
+  }
+}
+
 // ---------- UI Primitives ----------
 function Field({ label, children, hint }) {
   return (
@@ -1725,23 +1733,49 @@ export default function App() {
 
   useEffect(() => {
     if (loading) return;
-    const existingPairs = new Set(matches.map(m => [m.aId, m.bId].sort().join("|")));
-    const newMatches = [];
+
+    // On préserve tel quel tout match déjà traité manuellement par l'agence (validé, refusé, mis en contact...).
+    // Seuls les matchs encore "en attente" sont recalculés à chaque fois avec les critères actuels,
+    // afin qu'une mise à jour des critères de matching s'applique immédiatement, sans attendre une nouvelle inscription.
+    const decidedMatches = matches.filter(m => m.status !== "pending");
+    const decidedPairs = new Set(decidedMatches.map(m => [m.aId, m.bId].sort().join("|")));
+    const oldPendingByKey = new Map(
+      matches.filter(m => m.status === "pending").map(m => [[m.aId, m.bId].sort().join("|"), m])
+    );
+
+    const newPending = [];
     for (let i = 0; i < profiles.length; i++) {
       for (let j = i + 1; j < profiles.length; j++) {
         const a = profiles[i], b = profiles[j];
         const key = [a.id, b.id].sort().join("|");
-        if (existingPairs.has(key)) continue;
+        if (decidedPairs.has(key)) continue;
         const score = computeScore(a, b);
         if (score >= 35) {
-          newMatches.push({ id: uid(), aId: a.id, bId: b.id, score, status: "pending", createdAt: Date.now() });
+          const existing = oldPendingByKey.get(key);
+          newPending.push({
+            id: existing ? existing.id : uid(),
+            aId: a.id, bId: b.id, score,
+            status: "pending",
+            createdAt: existing ? existing.createdAt : Date.now(),
+          });
         }
       }
     }
-    if (newMatches.length > 0) {
-      const updated = [...matches, ...newMatches];
-      setMatches(updated);
-      saveMatches(updated);
+
+    const finalMatches = [...decidedMatches, ...newPending];
+    const finalIds = new Set(finalMatches.map(m => m.id));
+    const removedMatches = matches.filter(m => m.status === "pending" && !finalIds.has(m.id));
+
+    const changed = finalMatches.length !== matches.length
+      || newPending.some(m => {
+        const old = oldPendingByKey.get([m.aId, m.bId].sort().join("|"));
+        return !old || old.score !== m.score;
+      });
+
+    if (changed || removedMatches.length > 0) {
+      setMatches(finalMatches);
+      saveMatches(finalMatches);
+      removedMatches.forEach(m => deleteMatchDoc(m.id));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profiles, loading]);
