@@ -207,20 +207,20 @@ function computeScore(a, b) {
   }
   if (!alcoholOk(a, b) || !alcoholOk(b, a)) return 0;
 
-  let score = 0;
-  let max = 0;
+  // Base de 70% : arrivé ici, le profil a déjà passé TOUS les critères stricts
+  // (genre, âge, zone, nationalité, enfants, religion, taille, morphologie, tabac, alcool).
+  // La ville en commun et les centres d'intérêt partagés ajoutent des points bonus jusqu'à 100%.
+  let score = 70;
 
-  max += 10;
   if (a.city && b.city && a.city.trim().toLowerCase() === b.city.trim().toLowerCase()) score += 10;
 
-  max += 20;
   const aInt = new Set(a.interests || []);
   const bInt = new Set(b.interests || []);
   const shared = [...aInt].filter(x => bInt.has(x)).length;
   const denom = Math.max(aInt.size, bInt.size, 1);
   score += Math.round((shared / denom) * 20);
 
-  return Math.round((score / max) * 100);
+  return Math.min(100, Math.round(score));
 }
 
 // ---------- Firebase Configuration ----------
