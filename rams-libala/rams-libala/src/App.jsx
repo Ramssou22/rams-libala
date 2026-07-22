@@ -482,7 +482,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const [form, setForm] = useState({
     firstName: "", age: "", gender: "", city: "", country: "", email: "", phone: "", nationalities: [], situation: "", hasChildren: "", numberOfChildren: "", childrenAges: "", wantsChildren: "",
     religion: "", profession: "", educationLevel: "", smoker: "", lifestyle: "", housingStatus: "", availability: "", morphology: "", lookingForMorphology: "", lookingForNationalities: [],
-    interests: [], lookingForGender: "", ageMin: "", ageMax: "", lookingForChildrenMax: "Peu importe", lookingForSmoker: "Peu importe", lookingForAlcohol: "Peu importe",
+    interests: [], lookingForGender: "", ageMin: "", ageMax: "", lookingForChildrenMax: "Peu importe", lookingForSmoker: "Peu importe", lookingForAlcohol: "Peu importe", appointmentConfirmed: false,
     height: "", lookingForHeightMin: "", lookingForHeightMax: "", acceptedZones: [],
     dealbreakers: "", selfDescription: "", whyAgency: "",
     about: "", photo: null, photoFull: null, subscriptionPlanId: null, contractAccepted: false, promoCode: "", paymentMethod: "", paymentProvider: "", paymentReference: "", paymentSelfConfirmed: false,
@@ -571,6 +571,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
     { key: "personality", title: "Votre personnalité", icon: Sparkles },
     { key: "interests", title: "Vos centres d interet", icon: Heart },
     { key: "lookingfor", title: "Ce que vous recherchez", icon: Heart },
+    { key: "appointment", title: "Rendez-vous obligatoire", icon: Calendar },
   ];
 
   // Le paiement (ou un code promo valide) est obligatoire pour valider l'inscription
@@ -585,6 +586,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
   const canNext = () => {
     if (currentKey === "plan") return !!form.subscriptionPlanId;
     if (currentKey === "payment") return !!form.contractAccepted && paymentSatisfied();
+    if (currentKey === "appointment") return !!form.appointmentConfirmed;
     if (currentKey === "info") return form.firstName && form.age && form.gender && form.photo && form.photoFull && form.profession && form.height && form.email && form.phone && form.morphology;
     if (currentKey === "criteria") return form.city && form.country && form.situation && form.hasChildren && form.wantsChildren;
     if (currentKey === "personality") return true;
@@ -930,11 +932,12 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
               </h4>
               <p><strong>1. Objet.</strong> {AGENCY_NAME} propose un service de mise en relation entre personnes célibataires, sur la base des critères déclarés par le client lors de son inscription.</p>
               <p><strong>2. Formule souscrite.</strong> {plan ? `${plan.vip ? "VIP " : ""}${plan.months} mois - ${plan.profiles} - ${plan.price} €` : "-"}.{plan?.vip && " La formule VIP comprend : (a) un entretien personnalisé en présentiel entre le client et l'agence, proposé uniquement aux clients résidant en France métropolitaine ; (b) l'organisation logistique des deux premiers rendez-vous de mise en relation. Lors de ces rendez-vous, l'agence n'est pas présente."}</p>
-              <p><strong>3. Obligation de moyens.</strong> {AGENCY_NAME} s'engage à mettre en œuvre les moyens nécessaires à la recherche de profils compatibles. {AGENCY_NAME} n'a pas d'obligation de résultat.</p>
-              <p><strong>4. Confidentialité.</strong> Les informations et la photo transmises restent strictement confidentielles et ne sont communiquées à un autre client qu'après validation d'une mise en relation par {AGENCY_NAME}.</p>
-              <p><strong>5. Durée et expiration.</strong> L'abonnement est valable pour la durée choisie à compter de la date de paiement.</p>
-              <p><strong>6. Droit de rétractation.</strong> Le client dispose d'un délai de rétractation après la signature du présent contrat, sauf début d'exécution expressément demandé.</p>
-              <p><strong>7. Aucune garantie de résultat.</strong> Le nombre de profils ou de mises en relation indiqué constitue un engagement de moyens, non une garantie de relation.</p>
+              <p><strong>3. Entretien vidéo obligatoire.</strong> La réservation et la tenue d'un entretien vidéo avec {AGENCY_NAME} est une condition obligatoire de validation de l'inscription, quelle que soit la formule souscrite. Cet entretien a pour objet de vérifier les informations déclarées par le client et de garantir la fiabilité des profils de la plateforme. Le client s'engage à réserver un créneau via le calendrier proposé lors de l'inscription et à s'y présenter. Le défaut de tenue de cet entretien peut entraîner la suspension ou la suppression du profil, sans remboursement.</p>
+              <p><strong>4. Obligation de moyens.</strong> {AGENCY_NAME} s'engage à mettre en œuvre les moyens nécessaires à la recherche de profils compatibles. {AGENCY_NAME} n'a pas d'obligation de résultat.</p>
+              <p><strong>5. Confidentialité.</strong> Les informations et la photo transmises restent strictement confidentielles et ne sont communiquées à un autre client qu'après validation d'une mise en relation par {AGENCY_NAME}.</p>
+              <p><strong>6. Durée et expiration.</strong> L'abonnement est valable pour la durée choisie à compter de la date de paiement.</p>
+              <p><strong>7. Droit de rétractation.</strong> Le client dispose d'un délai de rétractation après la signature du présent contrat, sauf début d'exécution expressément demandé.</p>
+              <p><strong>8. Aucune garantie de résultat.</strong> Le nombre de profils ou de mises en relation indiqué constitue un engagement de moyens, non une garantie de relation.</p>
             </div>
             <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 18, cursor: "pointer" }}>
               <input
@@ -1093,7 +1096,7 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
                       background: "#FBF6EA", border: `1px solid ${COLORS.goldLight}`, borderRadius: 8,
                       padding: "12px 14px", fontSize: 13, color: COLORS.bordeauxDark, marginBottom: 16
                     }}>
-                      Envoyez {selectedPlan?.price} € au numéro Mobile Money communiqué par l'agence.
+                      Envoyez {selectedPlan?.price} € (équivalent en monnaie locale) au numéro Mobile Money <strong>+242 06 448 56 20</strong> (Orange Money, MTN, Wave, Moov acceptés), au nom de <strong>Berdalia Benjamine</strong>. Gardez une preuve de la transaction (capture d'écran ou SMS de confirmation).
                     </div>
                     <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14, cursor: "pointer" }}>
                       <input
@@ -1124,6 +1127,37 @@ function RegistrationForm({ onSubmit, onCancel, adminMode = false }) {
           </>
         );
       })()}
+
+      {currentKey === "appointment" && (
+        <div>
+          <div style={{
+            background: "#FBF6EA", border: `1px solid ${COLORS.goldLight}`, borderRadius: 8,
+            padding: "14px 16px", fontSize: 13.5, color: COLORS.bordeauxDark, marginBottom: 16, lineHeight: 1.5
+          }}>
+            <strong>Étape obligatoire :</strong> avant de finaliser votre inscription, vous devez réserver un créneau pour un entretien vidéo avec l'agence. Cet entretien permet de confirmer les informations de votre profil et garantit le sérieux de notre plateforme pour tous nos membres.
+          </div>
+          <div style={{ borderRadius: 10, overflow: "hidden", border: `1px solid ${COLORS.creamDark}`, marginBottom: 16 }}>
+            <iframe
+              src="https://calendly.com/ramsbiolux/nouvelle-reunion?hide_gdpr_banner=1"
+              title="Prise de rendez-vous"
+              width="100%"
+              height="630"
+              frameBorder="0"
+            />
+          </div>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!form.appointmentConfirmed}
+              onChange={e => set("appointmentConfirmed", e.target.checked)}
+              style={{ marginTop: 3, width: 17, height: 17, cursor: "pointer", accentColor: COLORS.bordeaux }}
+            />
+            <span style={{ fontSize: 14, color: COLORS.ink }}>
+              Je confirme avoir réservé mon créneau pour l'entretien vidéo obligatoire ci-dessus.
+            </span>
+          </label>
+        </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 36 }}>
         <Button variant="ghost" onClick={step === 0 ? onCancel : () => setStep(s => s - 1)}>
@@ -1341,6 +1375,29 @@ function ProfileCard({ profile, onClose, onSaveNotes }) {
         )}
         {profile.paidViaPromoCode && (
           <DetailRow icon={Lock} label="Paiement" value="Code promo (gratuit)" />
+        )}
+        {profile.paymentMethod === "mobile_money" && (
+          <div style={{
+            marginTop: 8, padding: "10px 12px", borderRadius: 8,
+            background: profile.adminPaymentVerified ? "#E8F3EC" : "#FFF1D6",
+            border: `1px solid ${profile.adminPaymentVerified ? "#B8E0C6" : "#F0C878"}`,
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10
+          }}>
+            <span style={{ fontSize: 13, color: profile.adminPaymentVerified ? "#2D5C3F" : "#8A5A00" }}>
+              {profile.adminPaymentVerified
+                ? "✅ Paiement Mobile Money vérifié"
+                : "⚠️ Paiement Mobile Money déclaré — à vérifier sur votre compte"}
+            </span>
+            {!profile.adminPaymentVerified && (
+              <Button
+                onClick={() => onSaveNotes(profile.id, { adminPaymentVerified: true })}
+                variant="gold"
+                style={{ padding: "5px 10px", fontSize: 12.5, whiteSpace: "nowrap" }}
+              >
+                Marquer vérifié
+              </Button>
+            )}
+          </div>
         )}
         {profile.selfDescription && (
           <div style={{ marginTop: 12, padding: 12, background: COLORS.cream, borderRadius: 8, fontSize: 13.5, fontStyle: "italic", color: COLORS.ink }}>
@@ -1685,11 +1742,22 @@ function RenewModal({ profile, onClose, onConfirm }) {
 }
 
 function ProfileMini({ profile, onClick }) {
+  const needsMobileMoneyCheck = profile.paymentMethod === "mobile_money" && !profile.adminPaymentVerified;
   return (
     <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
       <Avatar photo={profile.photo} name={profile.firstName} size={40} />
       <div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink }}>{profile.firstName}, {profile.age}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.ink, display: "flex", alignItems: "center", gap: 6 }}>
+          {profile.firstName}, {profile.age}
+          {needsMobileMoneyCheck && (
+            <span style={{
+              fontSize: 10.5, fontWeight: 700, color: "#8A5A00", background: "#FFF1D6",
+              border: "1px solid #F0C878", borderRadius: 6, padding: "2px 6px"
+            }}>
+              ⚠️ Mobile Money à vérifier
+            </span>
+          )}
+        </div>
         <div style={{ fontSize: 12, color: COLORS.inkSoft }}>{profile.city}</div>
       </div>
     </div>
